@@ -13,7 +13,7 @@ echo.
 echo   Atelier monture 3D - agent d'impression
 echo   ---------------------------------------
 echo   Installation en cours, cela prend 1 a 3 minutes selon la connexion.
-echo   Ne fermez pas cette fenetre.
+echo   Ne fermez pas cette fenetre : les barres de progression montrent l'avancement.
 echo.
 powershell -NoProfile -ExecutionPolicy Bypass -Command "$f='%~f0'; $s=[IO.File]::ReadAllText($f); $i=$s.IndexOf('#'+'#POWERSHELL#'+'#'); iex $s.Substring($i)"
 echo.
@@ -38,6 +38,50 @@ $Profiles = @('machines.json', 'p1s.machine.json', 'p1s.process.json', 'p1s.proc
 function Step($t) { Write-Host "  - $t" }
 function Fetch($url, $dest) { Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing }
 
+# barre de progression sur une ligne : [#########...........]  42 %  71 / 170 Mo
+function Bar($done, $total, $info) {
+  $p = [int][math]::Floor(100 * $done / [math]::Max($total, 1))
+  if ($p -eq $script:LastP) { return }
+  $script:LastP = $p
+  $n = [int][math]::Floor($p / 4)
+  Write-Host -NoNewline ("`r    [" + ('#' * $n) + ('.' * (25 - $n)) + '] ' + "$p %".PadLeft(5) + "  $info      ")
+}
+
+# téléchargement en flux, avec avancement en Mo
+function Download($url, $dest) {
+  $script:LastP = -1
+  $resp = [Net.WebRequest]::Create($url).GetResponse()
+  $total = $resp.ContentLength
+  $in = $resp.GetResponseStream(); $out = [IO.File]::Create($dest)
+  $buf = New-Object byte[] 1048576; $done = 0
+  try {
+    while (($r = $in.Read($buf, 0, $buf.Length)) -gt 0) {
+      $out.Write($buf, 0, $r); $done += $r
+      Bar $done $total ('{0} / {1} Mo' -f [int]($done / 1MB), [int]($total / 1MB))
+    }
+  } finally { $out.Close(); $in.Close(); $resp.Close() }
+  Write-Host ''
+}
+
+# décompression fichier par fichier (bien plus rapide qu'Expand-Archive), avec avancement
+function Unzip($zip, $dest) {
+  Add-Type -AssemblyName System.IO.Compression.FileSystem
+  $script:LastP = -1
+  $a = [IO.Compression.ZipFile]::OpenRead($zip)
+  try {
+    $files = @($a.Entries | Where-Object { $_.Name })
+    $i = 0
+    foreach ($e in $files) {
+      $target = Join-Path $dest $e.FullName
+      [IO.Directory]::CreateDirectory((Split-Path -Parent $target)) | Out-Null
+      [IO.Compression.ZipFileExtensions]::ExtractToFile($e, $target, $true)
+      $i++
+      Bar $i $files.Count "decompression"
+    }
+  } finally { $a.Dispose() }
+  Write-Host ''
+}
+
 try {
   New-Item -ItemType Directory -Force $Dir, "$Dir\profiles" | Out-Null
 
@@ -55,15 +99,15 @@ try {
 
   if (-not (Test-Path "$Dir\python\pythonw.exe")) {
     Step 'Python (version officielle embarquee)'
-    Fetch $PythonUrl "$Dir\python.zip"
-    Expand-Archive "$Dir\python.zip" "$Dir\python" -Force
+    Download $PythonUrl "$Dir\python.zip"
+    Unzip "$Dir\python.zip" "$Dir\python"
     Remove-Item "$Dir\python.zip"
   }
 
   if (-not (Get-ChildItem "$Dir\orca" -Recurse -Filter 'orca-slicer.exe' -ErrorAction SilentlyContinue)) {
-    Step 'Moteur d''impression OrcaSlicer (170 Mo, patience...)'
-    Fetch $OrcaUrl "$Dir\orca.zip"
-    Expand-Archive "$Dir\orca.zip" "$Dir\orca" -Force
+    Step 'Moteur d''impression OrcaSlicer (170 Mo, c''est l''etape la plus longue)'
+    Download $OrcaUrl "$Dir\orca.zip"
+    Unzip "$Dir\orca.zip" "$Dir\orca"
     Remove-Item "$Dir\orca.zip"
   }
 
