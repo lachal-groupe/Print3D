@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Atelier monture 3D</title>
+<style>
+  :root {
+    --bg: #090d15; --bg2: #0e1422; --panel: #111827; --card: #141c2d; --card2: #182236;
+    --line: #233049; --line2: #2c3b58; --ink: #e8eef8; --muted: #8b98ae; --dim: #5d6a80;
+    --orange: #f5a524; --purple: #a78bfa; --teal: #2dd4bf; --blue: #60a5fa; --lime: #a3e635; --pink: #f472b6; --red: #f87171;
+    --mono: "Cascadia Mono", "JetBrains Mono", Consolas, ui-monospace, monospace;
+    --radius: 14px;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: radial-gradient(1200px 600px at 70% -10%, #16233d 0%, transparent 60%), var(--bg);
+    color: var(--ink); font: 14px/1.45 "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+    display: grid; grid-template-columns: 372px 1fr; grid-template-rows: auto 1fr; overflow: hidden;
+  }
+  svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  a { color: var(--teal); }
+
+  /* ---------- barre du haut ---------- */
+  .topbar { grid-column: 1 / -1; display: flex; align-items: center; gap: 16px; padding: 12px 18px; border-bottom: 1px solid var(--line); background: rgba(9, 13, 21, .7); backdrop-filter: blur(8px); }
+  .brand { display: flex; align-items: center; gap: 10px; min-width: 330px; }
+  .logo { width: 38px; height: 38px; border-radius: 11px; display: grid; place-items: center; color: #08111d;
+    background: conic-gradient(from 210deg, var(--orange), var(--purple), var(--teal), var(--blue), var(--orange)); }
+  .logo svg { width: 22px; height: 22px; stroke-width: 2.2; }
+  .brand h1 { font-size: 16px; margin: 0; letter-spacing: .2px; }
+  .brand p { margin: 0; font-size: 12px; color: var(--muted); }
+  .stats { display: flex; gap: 10px; flex: 1; justify-content: center; }
+  .stat { min-width: 118px; padding: 7px 12px; border-radius: 12px; border: 1px solid var(--line); background: linear-gradient(180deg, color-mix(in srgb, var(--c) 14%, var(--card)), var(--card)); }
+  .stat b { display: block; font-family: var(--mono); font-size: 17px; color: var(--c); font-weight: 600; }
+  .stat span { font-size: 10.5px; letter-spacing: .6px; text-transform: uppercase; color: var(--muted); }
+  .top-actions { display: flex; gap: 8px; align-items: center; }
+  .print-box { display: flex; gap: 6px; align-items: center; padding: 4px; border-radius: 12px; border: 1px solid var(--line); background: var(--card); }
+  .print-box select { width: auto; padding: 6px 8px; }
+  .print-box button.agent { display: inline-flex; align-items: center; gap: 7px; padding: 6px 9px; font-size: 12.5px; background: transparent; border-color: transparent; color: var(--muted); }
+  .print-box button.agent .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--dim); }
+  .print-box button.agent.ok .dot { background: var(--lime); box-shadow: 0 0 8px var(--lime); }
+  .print-box button.agent.off .dot { background: var(--orange); }
+  .print-box button.busy { opacity: .7; cursor: progress; }
+  dialog { max-width: 520px; border: 1px solid var(--line2); border-radius: 16px; background: var(--panel); color: var(--ink); padding: 18px 22px; }
+  dialog::backdrop { background: rgba(4, 7, 13, .7); backdrop-filter: blur(4px); }
+  dialog h2 { margin: 0 0 8px; font-size: 17px; }
+  dialog p, dialog li { font-size: 13.5px; color: var(--muted); } dialog b { color: var(--ink); }
+  dialog form { text-align: right; margin-top: 10px; }
+  .mini { font-size: 12px; color: var(--dim); }
+
+  /* ---------- panneau gauche ---------- */
+  aside.side { overflow-y: auto; padding: 14px 12px 24px 14px; border-right: 1px solid var(--line); background: linear-gradient(180deg, rgba(17,24,39,.6), rgba(9,13,21,.6)); }
+  aside.side::-webkit-scrollbar { width: 8px; } aside.side::-webkit-scrollbar-thumb { background: var(--line2); border-radius: 8px; }
+  .filecard { border: 1.5px dashed var(--line2); border-radius: var(--radius); padding: 14px; display: flex; gap: 12px; align-items: center; transition: .15s; margin-bottom: 12px; background: var(--card); }
+  .filecard.over { border-color: var(--teal); background: color-mix(in srgb, var(--teal) 10%, var(--card)); }
+  .filecard .icon-tile { --c: var(--blue); }
+  .filecard label { color: var(--teal); font-weight: 600; cursor: pointer; }
+  .filecard .meta { font-size: 12.5px; color: var(--muted); min-width: 0; }
+  .filecard .meta strong { color: var(--ink); font-size: 13.5px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+  .chip { font-family: var(--mono); font-size: 11.5px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line2); color: var(--ink); background: var(--card2); }
+  .icon-tile { width: 34px; height: 34px; flex: none; border-radius: 10px; display: grid; place-items: center; color: var(--c);
+    background: color-mix(in srgb, var(--c) 16%, transparent); border: 1px solid color-mix(in srgb, var(--c) 35%, transparent); }
+
+  details.sec { border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); margin-bottom: 10px; overflow: hidden; }
+  details.sec[open] { border-color: color-mix(in srgb, var(--c) 45%, var(--line)); box-shadow: 0 8px 24px -18px var(--c); }
+  details.sec > summary { list-style: none; display: flex; align-items: center; gap: 11px; padding: 10px 12px; cursor: pointer; user-select: none; }
+  details.sec > summary::-webkit-details-marker { display: none; }
+  details.sec > summary .t { flex: 1; min-width: 0; }
+  details.sec > summary .t b { display: block; font-size: 14px; }
+  details.sec > summary .t span { font-size: 11.5px; color: var(--muted); }
+  details.sec > summary .chev { color: var(--dim); transition: transform .2s; }
+  details.sec[open] > summary .chev { transform: rotate(90deg); color: var(--c); }
+  .sec-body { padding: 2px 14px 12px; border-top: 1px solid var(--line); }
+
+  .field { margin: 10px 0; }
+  .field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  .field label[title] { text-decoration: underline dotted color-mix(in srgb, var(--muted) 60%, transparent); text-underline-offset: 3px; cursor: help; }
+  .inputs { display: grid; grid-template-columns: 1fr 66px 22px; gap: 8px; align-items: center; }
+  .inputs output { font-family: var(--mono); font-size: 12px; color: var(--ink); grid-column: span 2; }
+  input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 4px; border-radius: 4px; outline: none;
+    background: linear-gradient(90deg, var(--c, var(--teal)) var(--p, 50%), var(--line2) var(--p, 50%)); }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 15px; height: 15px; border-radius: 50%; background: var(--c, var(--teal)); border: 3px solid var(--bg); box-shadow: 0 0 0 1px var(--c, var(--teal)); cursor: pointer; }
+  input[type=number], input[type=text], select {
+    width: 100%; padding: 5px 7px; border: 1px solid var(--line2); border-radius: 8px; background: var(--bg2); color: var(--ink);
+    font: inherit; font-size: 13px; }
+  input[type=number] { font-family: var(--mono); font-size: 12.5px; text-align: right; }
+  input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px solid var(--c, var(--teal)); outline-offset: 1px; }
+  .unit { font-size: 11.5px; color: var(--dim); }
+  .field.off { opacity: .35; }
+  .seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 4px; padding: 3px; border-radius: 10px; background: var(--bg2); border: 1px solid var(--line2); }
+  .seg button { border: 0; background: transparent; color: var(--muted); padding: 5px 6px; border-radius: 7px; font-size: 12.5px; }
+  .seg button.on { background: color-mix(in srgb, var(--c, var(--teal)) 22%, var(--card2)); color: var(--ink); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c, var(--teal)) 55%, transparent); }
+  .seg button:disabled { opacity: .5; }
+
+  button { font: inherit; border-radius: 10px; padding: 8px 12px; border: 1px solid var(--line2); background: var(--card2); color: var(--ink); cursor: pointer; }
+  button:hover:not(:disabled) { border-color: var(--c, var(--teal)); }
+  button:disabled { opacity: .4; cursor: default; }
+  button.primary { background: linear-gradient(180deg, color-mix(in srgb, var(--teal) 90%, white 10%), var(--teal)); color: #04221d; border-color: transparent; font-weight: 650; }
+  button.ghost { background: transparent; border-color: transparent; color: var(--muted); }
+  button.danger { color: var(--red); border-color: color-mix(in srgb, var(--red) 40%, var(--line2)); background: transparent; }
+  button.small { font-size: 12.5px; padding: 6px 9px; width: 100%; margin-top: 4px; }
+  button.wide { width: 100%; margin-top: 10px; }
+  .btn-icon { display: inline-flex; align-items: center; gap: 7px; }
+  .photo-state { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--muted); margin: 8px 0 2px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--dim); }
+  .dot.on { background: var(--lime); box-shadow: 0 0 8px var(--lime); }
+
+  /* ---------- vue 3D ---------- */
+  main { position: relative; min-width: 0; min-height: 0; }
+  #viewport { position: absolute; inset: 0; }
+  #viewport canvas { display: block; width: 100%; height: 100%; }
+  #empty { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; color: var(--muted); pointer-events: none; }
+  #empty[hidden] { display: none; }
+  #empty .big { font-size: 15px; color: var(--ink); margin-top: 10px; }
+  .float { position: absolute; display: flex; gap: 6px; padding: 5px; border-radius: 12px; border: 1px solid var(--line); background: rgba(17, 24, 39, .78); backdrop-filter: blur(8px); }
+  .views { top: 14px; right: 14px; }
+  .views button { padding: 6px 10px; font-size: 12.5px; background: transparent; border-color: transparent; color: var(--muted); }
+  .views button:hover { color: var(--ink); }
+  .views .sep { width: 1px; background: var(--line2); margin: 2px; }
+  .views button.toggle.on { color: #08111d; font-weight: 600; background: linear-gradient(90deg, var(--orange), var(--purple), var(--teal), var(--blue)); }
+  .legend { bottom: 52px; left: 14px; flex-direction: column; gap: 5px; padding: 10px 12px; }
+  .legend[hidden] { display: none; }
+  .legend div { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+  .legend i { width: 10px; height: 10px; border-radius: 3px; background: var(--c); box-shadow: 0 0 8px color-mix(in srgb, var(--c) 60%, transparent); }
+  .colors { bottom: 14px; right: 14px; align-items: center; padding: 6px 10px; }
+  .colors span { font-size: 12px; color: var(--muted); margin-right: 4px; }
+  .colors button { width: 20px; height: 20px; padding: 0; border-radius: 50%; background: var(--sw); border: 2px solid var(--line2); }
+  .colors button.on { border-color: var(--ink); }
+  #status { position: absolute; left: 14px; bottom: 14px; font-family: var(--mono); font-size: 11.5px; color: var(--muted); padding: 5px 10px; border-radius: 9px; border: 1px solid var(--line); background: rgba(17, 24, 39, .78); }
+  #warnings { position: absolute; left: 14px; top: 14px; display: grid; gap: 6px; pointer-events: none; max-width: 520px; }
+  #warnings div { font-size: 12.5px; color: #fde68a; background: rgba(120, 80, 0, .35); border: 1px solid rgba(245, 165, 36, .5); padding: 6px 10px; border-radius: 10px; }
+
+  /* ---------- éditeur photo ---------- */
+  .photo-modal { position: fixed; inset: 0; z-index: 50; background: rgba(4, 7, 13, .72); backdrop-filter: blur(6px); display: grid; place-items: center; padding: 18px; }
+  .photo-card { width: min(1400px, 100%); height: min(900px, 100%); display: grid; grid-template-rows: auto 1fr; border-radius: 18px; border: 1px solid var(--line2); background: var(--panel); overflow: hidden; box-shadow: 0 30px 80px -30px #000; }
+  .photo-card header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+  .photo-title { display: flex; gap: 12px; align-items: center; }
+  .photo-title h2 { font-size: 16px; margin: 0; } .photo-title p { margin: 0; font-size: 12px; color: var(--muted); }
+  .photo-body { display: grid; grid-template-columns: 1fr 320px; min-height: 0; }
+  .photo-stage { position: relative; background: repeating-conic-gradient(#0f1525 0 25%, #121a2c 0 50%) 0 0 / 22px 22px; min-height: 0; }
+  .photo-stage canvas { position: absolute; inset: 0; cursor: grab; touch-action: none; }
+  .photo-drop { position: absolute; inset: 40px; border: 2px dashed var(--line2); border-radius: 16px; display: grid; place-content: center; text-align: center; gap: 4px; color: var(--muted); cursor: pointer; }
+  .photo-drop strong { color: var(--lime); font-size: 15px; }
+  .photo-drop[hidden] { display: none; }
+  .photo-side { padding: 14px 16px; border-left: 1px solid var(--line); overflow-y: auto; --c: var(--lime); }
+  .steps { list-style: none; padding: 0; margin: 0 0 8px; display: grid; gap: 6px; }
+  .steps li { display: flex; gap: 10px; align-items: center; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line); color: var(--muted); }
+  .steps li b { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; background: var(--card2); }
+  .steps li.on { color: var(--ink); border-color: color-mix(in srgb, var(--lime) 50%, var(--line)); }
+  .steps li.on b { background: var(--lime); color: #142004; }
+  .hint { font-size: 12.5px; color: var(--muted); } .hint b { color: var(--ink); }
+  .mini { font-size: 11.5px; color: var(--dim); margin-top: 14px; }
+  .check { display: flex; gap: 8px; align-items: center; font-size: 12.5px; color: var(--muted); margin: 8px 0; }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+
+  @media (max-width: 900px) {
+    body { grid-template-columns: 1fr; grid-template-rows: auto 52vh auto; overflow: auto; }
+    .stats { display: none; } .brand { min-width: 0; } .top-actions button:not(.primary) { display: none; }
+    main { grid-row: 2; } aside.side { grid-row: 3; border-right: 0; }
+    .photo-body { grid-template-columns: 1fr; grid-template-rows: 1fr auto; }
+  }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "./vendor/three/three.module.js",
+  "three/addons/": "./vendor/three/addons/",
+  "manifold-3d": "./vendor/manifold-3d/manifold.js"
+} }
+</script>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <div class="logo"><svg viewBox="0 0 24 24"><circle cx="6.5" cy="13" r="4"/><circle cx="17.5" cy="13" r="4"/><path d="M10.5 13q1.5-1.6 3 0M2.5 12 1.5 9M21.5 12l1-3"/></svg></div>
+    <div><h1>Atelier monture 3D</h1><p>Dépannage en PLA · <a href="cotes-charniere.html" target="_blank">cotes charnière</a></p></div>
+  </div>
+  <div class="stats">
+    <div class="stat" style="--c:var(--teal)"><b id="st-size">—</b><span>Face (mm)</span></div>
+    <div class="stat" style="--c:var(--orange)"><b id="st-face">—</b><span>PLA face</span></div>
+    <div class="stat" style="--c:var(--blue)"><b id="st-temples">—</b><span>PLA branches</span></div>
+    <div class="stat" style="--c:var(--purple)"><b id="st-time">—</b><span>Calcul</span></div>
+  </div>
+  <div class="top-actions">
+    <button id="reset" class="ghost" title="Remettre tous les réglages par défaut">Réinitialiser</button>
+    <div class="print-box">
+      <button class="agent" id="agent" title="Agent d’impression"><span class="dot"></span><span class="lbl">Agent…</span></button>
+      <select id="machine" aria-label="Imprimante"></select>
+      <select id="quality" aria-label="Qualité d’impression">
+        <option value="rapide">Rapide</option><option value="fine">Fine</option>
+      </select>
+      <select id="parts" aria-label="Pièces à imprimer">
+        <option value="all">Face + branches</option><option value="face">Face seule</option><option value="temples">Branches seules</option>
+      </select>
+      <button class="primary btn-icon" id="print" data-export title="Créer le fichier à lancer sur l’imprimante"><svg viewBox="0 0 24 24"><path d="M7 9V3h10v6M7 18H4v-7h16v7h-3"/><path d="M7 14h10v7H7z"/></svg><span>Fichier d’impression</span></button>
+      <button id="exp-3mf" data-export class="ghost" title="Télécharger le plateau en .3mf (pour l’ouvrir dans un slicer)">.3mf</button>
+    </div>
+  </div>
+</header>
+
+<dialog id="agent-dialog">
+  <h2>Agent d’impression</h2>
+  <p>Pour créer le fichier d’impression directement depuis l’atelier, installez une fois l’agent sur ce PC.
+    Il travaille en arrière-plan : aucune fenêtre ne s’ouvre, rien à régler.</p>
+  <ol>
+    <li>Téléchargez <a id="agent-link" href="agent/Installer-Atelier.cmd" download>Installer-Atelier.cmd</a>.</li>
+    <li>Ouvrez-le (double-clic). Si Windows affiche « Windows a protégé votre ordinateur », cliquez sur
+      <b>Informations complémentaires</b> puis <b>Exécuter quand même</b>.</li>
+    <li>Une fenêtre noire s’ouvre : attendez « C’est prêt ! » (1 à 3 minutes), fermez-la et revenez ici.</li>
+  </ol>
+  <p class="mini">Si le navigateur demande d’autoriser l’accès aux appareils du réseau local, répondez <b>Autoriser</b>.
+    En attendant, le bouton <b>.3mf</b> permet toujours de passer par un slicer.</p>
+  <form method="dialog"><button class="primary">Compris</button></form>
+</dialog>
+
+<aside class="side">
+  <div class="filecard" id="drop">
+    <div class="icon-tile"><svg viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M9 13h6M9 17h4"/></svg></div>
+    <div id="file-info" class="meta">Glissez un fichier <strong>.oma</strong> ici<br><label for="file">ou parcourir…</label></div>
+    <input type="file" id="file" accept=".oma,.vca,.txt,.dat" hidden>
+  </div>
+  <div id="controls"></div>
+</aside>
+
+<main>
+  <div id="viewport"></div>
+  <div id="empty"><div><svg viewBox="0 0 24 24" style="width:46px;height:46px;color:var(--line2)"><circle cx="6.5" cy="13" r="4"/><circle cx="17.5" cy="13" r="4"/><path d="M10.5 13q1.5-1.6 3 0"/></svg>
+    <div class="big">Importez un fichier OMA pour générer la monture</div><div>Glissez-le dans la fenêtre ou utilisez le panneau de gauche</div></div></div>
+  <div id="warnings"></div>
+  <div class="float views">
+    <button id="v-front">Face</button><button id="v-side">Profil</button><button id="v-top">Dessus</button><button id="v-3q">3/4</button>
+    <span class="sep"></span>
+    <button id="parts-toggle" class="toggle" title="Colorer chaque partie">Pièces</button>
+  </div>
+  <div class="float legend" id="legend" hidden></div>
+  <div class="float colors" id="colors"><span>Matière</span></div>
+  <div id="status"></div>
+</main>
+<script type="module" src="./src/app.js"></script>
+</body>
+</html>

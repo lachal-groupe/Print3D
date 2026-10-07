@@ -1,0 +1,92 @@
+{
+  "_comment": "Réglages « monture » appliqués par-dessus les profils officiels d'OrcaSlicer. Les clés sont celles d'OrcaSlicer.",
+  "machines": {
+    "p1s": {
+      "label": "Bambu Lab P1S",
+      "bed": [
+        256,
+        256
+      ],
+      "output": "gcode.3mf",
+      "machine": "Bambu Lab P1S 0.4 nozzle",
+      "process": "0.12mm Fine @BBL P1P",
+      "filament": "Generic PLA @BBL P1P",
+      "process_overrides": {
+        "curr_bed_type": "Textured PEI Plate"
+      },
+      "filament_overrides": {
+        "nozzle_temperature": [
+          "220"
+        ],
+        "nozzle_temperature_initial_layer": [
+          "220"
+        ],
+        "textured_plate_temp": [
+          "55"
+        ],
+        "textured_plate_temp_initial_layer": [
+          "55"
+        ]
+      }
+    },
+    "k1max": {
+      "label": "Creality K1 Max",
+      "bed": [
+        300,
+        300
+      ],
+      "output": "gcode",
+      "machine": "Creality K1 Max (0.4 nozzle)",
+      "process": "0.12mm Fine @Creality K1Max (0.4 nozzle)",
+      "filament": "Creality Generic PLA @K1-all",
+      "process_overrides": {},
+      "filament_overrides": {
+        "nozzle_temperature": [
+          "220"
+        ],
+        "nozzle_temperature_initial_layer": [
+          "220"
+        ],
+        "hot_plate_temp": [
+          "55"
+        ],
+        "hot_plate_temp_initial_layer": [
+          "55"
+        ]
+      }
+    }
+  },
+  "process_common": {
+    "layer_height": "0.12",
+    "initial_layer_print_height": "0.2",
+    "wall_loops": "4",
+    "top_shell_layers": "7",
+    "bottom_shell_layers": "5",
+    "sparse_infill_density": "35%",
+    "sparse_infill_pattern": "gyroid",
+    "enable_support": "0",
+    "brim_type": "no_brim",
+    "seam_position": "back",
+    "outer_wall_speed": "120",
+    "inner_wall_speed": "200",
+    "print_sequence": "by layer",
+    "wall_generator": "arachne"
+  },
+  "qualities": {
+    "fine": {
+      "label": "Fine (0,12 mm)",
+      "process": {}
+    },
+    "rapide": {
+      "label": "Rapide (0,20 mm)",
+      "process": {
+        "layer_height": "0.2",
+        "wall_loops": "3",
+        "top_shell_layers": "5",
+        "bottom_shell_layers": "4",
+        "sparse_infill_density": "25%",
+        "outer_wall_speed": "150"
+      }
+    }
+  }
+}

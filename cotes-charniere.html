@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cotes de la charnière</title>
+<style>
+  :root { --ink: #1d2327; --muted: #67727a; --metal: #e4e7ea; --metal-line: #4a5258; --dim: #c0392b; --known: #2f6f73; --bg: #ffffff; --line: #e1e5e8; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 980px; margin: 0 auto; padding: 24px 16px 40px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  h2 { font-size: 15px; margin: 22px 0 6px; }
+  p { margin: 4px 0; color: var(--muted); }
+  svg { width: 100%; height: auto; display: block; border: 1px solid var(--line); border-radius: 10px; margin-top: 8px; }
+  svg text { font-family: system-ui, sans-serif; }
+  table { border-collapse: collapse; width: 100%; margin-top: 10px; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 12.5px; color: var(--muted); font-weight: 600; }
+  td.l { font-weight: 700; color: var(--dim); width: 34px; font-size: 16px; }
+  td.v { width: 120px; font-variant-numeric: tabular-nums; }
+  .known { color: var(--known); font-weight: 600; }
+  .blank { display: inline-block; min-width: 70px; border-bottom: 1px solid var(--ink); }
+  @media print { main { padding: 0; } svg { border: 0; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Charnière flex : cotes à relever</h1>
+  <p>Mesurez au pied à coulisse et donnez-moi les valeurs sous la forme « A = 4 ; B = 2,6 … ». Les cotes en vert sont déjà connues.</p>
+  <p>Le dessin n’est pas à l’échelle. Il représente la charnière ouverte, tout droit : la patte côté face à gauche, la tige côté branche à droite.</p>
+
+  <h2>Vue 1 : de dessus, dans l’axe de la vis de charnière (on voit la tête de vis)</h2>
+  <svg id="v1" viewBox="0 0 940 300" role="img" aria-label="Vue de dessus de la charnière avec cotes A, B, D, E, F, H, M"></svg>
+
+  <h2>Vue 2 : de côté (on voit le trou de la tige)</h2>
+  <svg id="v2" viewBox="0 0 940 300" role="img" aria-label="Vue de côté de la charnière avec cotes C, G, I"></svg>
+
+  <h2>Cotes</h2>
+  <table>
+    <thead><tr><th></th><th>Ce qu’il faut mesurer</th><th>Valeur</th></tr></thead>
+    <tbody>
+      <tr><td class="l">A</td><td>Patte côté face : longueur, de la collerette jusqu’au bout</td><td class="v known">4 mm</td></tr>
+      <tr><td class="l">B</td><td>Patte côté face : largeur, vue 1 (la face où l’on voit le trou)</td><td class="v"><span class="blank"></span></td></tr>
+      <tr><td class="l">C</td><td>Patte côté face : épaisseur, vue 2 (l’épaisseur que la vis longue traverse)</td><td class="v"><span class="blank"></span></td></tr>
+      <tr><td class="l">D</td><td>Patte côté face : de la collerette au centre du trou</td><td class="v"><span class="blank"></span></td></tr>
+      <tr><td class="l">E</td><td>Entre les deux collerettes, faces extérieures (longueur de charnière qui reste visible)</td><td class="v"><span class="blank"></span></td></tr>
+      <tr><td class="l">F</td><td>Tige côté branche : longueur, de la collerette jusqu’au bout</td><td class="v"><span class="blank"></span></td></tr>
+      <tr><td class="l">G</td><td>Tige côté branche : hauteur, vue 2 (la face où l’on voit le trou)</td><td class="v"><span class="blank"></span></td></tr>
+      <tr><td class="l">H</td><td>Tige côté branche : épaisseur, vue 1 (l’épaisseur que la vis courte traverse)</td><td class="v"><span class="blank"></span></td></tr>
+      <tr><td class="l">I</td><td>Tige côté branche : de la collerette au centre du trou</td><td class="v known">8,1 mm</td></tr>
+      <tr><td class="l">K</td><td>Collerette : hauteur × largeur</td><td class="v known">6 × 4,5 mm</td></tr>
+      <tr><td class="l">M</td><td>Décalage de la tige par rapport à la patte, vue 1 (0 si elles sont dans le même axe)</td><td class="v"><span class="blank"></span></td></tr>
+    </tbody>
+  </table>
+  <p style="margin-top:12px">Vis (déjà connues) : vis longue 6 mm dans le tenon, vis courte 2,6 mm dans la branche, Ø 1 mm.</p>
+</main>
+<script>
+const NS = 'http://www.w3.org/2000/svg';
+const S = 24;                    // px par mm (schéma, pas à l'échelle exacte)
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+function el(svg, tag, attrs, text) {
+  const e = document.createElementNS(NS, tag);
+  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+  if (text !== undefined) e.textContent = text;
+  svg.appendChild(e);
+  return e;
+}
+function defs(svg) {
+  const d = el(svg, 'defs', {});
+  const m = document.createElementNS(NS, 'marker');
+  Object.entries({ id: 'arr' + svg.id, viewBox: '0 0 10 10', refX: 9, refY: 5, markerWidth: 7, markerHeight: 7, orient: 'auto-start-reverse' })
+    .forEach(([k, v]) => m.setAttribute(k, v));
+  const p = document.createElementNS(NS, 'path');
+  p.setAttribute('d', 'M0,0 L10,5 L0,10 z'); p.setAttribute('fill', css('--dim'));
+  m.appendChild(p); d.appendChild(m);
+}
+const metal = { fill: css('--metal'), stroke: css('--metal-line'), 'stroke-width': 1.5 };
+const rect = (svg, x, y, w, h) => el(svg, 'rect', { x, y, width: w, height: h, rx: 2, ...metal });
+// cote horizontale entre x1 et x2, ligne à la hauteur y, attaches depuis yRef
+function hdim(svg, x1, x2, y, yRef, label, known) {
+  const col = known ? css('--known') : css('--dim');
+  for (const x of [x1, x2]) el(svg, 'line', { x1: x, y1: yRef, x2: x, y2: y + (y > yRef ? 6 : -6), stroke: col, 'stroke-width': 1, 'stroke-dasharray': '3 3' });
+  el(svg, 'line', { x1, y1: y, x2, y2: y, stroke: col, 'stroke-width': 1.4, 'marker-start': `url(#arr${svg.id})`, 'marker-end': `url(#arr${svg.id})` });
+  el(svg, 'text', { x: (x1 + x2) / 2, y: y - 7, 'text-anchor': 'middle', 'font-size': 17, 'font-weight': 700, fill: col }, label);
+}
+// cote verticale entre y1 et y2, ligne à l'abscisse x
+function vdim(svg, y1, y2, x, xRef, label, known) {
+  const col = known ? css('--known') : css('--dim');
+  for (const y of [y1, y2]) el(svg, 'line', { x1: xRef, y1: y, x2: x + (x > xRef ? 6 : -6), y2: y, stroke: col, 'stroke-width': 1, 'stroke-dasharray': '3 3' });
+  el(svg, 'line', { x1: x, y1, x2: x, y2, stroke: col, 'stroke-width': 1.4, 'marker-start': `url(#arr${svg.id})`, 'marker-end': `url(#arr${svg.id})` });
+  el(svg, 'text', { x: x + (x > xRef ? 10 : -10), y: (y1 + y2) / 2 + 6, 'text-anchor': x > xRef ? 'start' : 'end', 'font-size': 17, 'font-weight': 700, fill: col }, label);
+}
+function caption(svg, x, y, t) { el(svg, 'text', { x, y, 'font-size': 13, fill: css('--muted'), 'text-anchor': 'middle' }, t); }
+
+// géométrie commune (mm) : patte 4, collerette 0,7, bloc ressort 3,4, collerette 0,7, tige 9,6
+const x0 = 120, cy = 150;
+const tabL = 4 * S, col = 0.7 * S, knuckle = 3.4 * S, barL = 9.6 * S;
+const xTab = x0, xC1 = x0 + tabL, xK = xC1 + col, xC2 = xK + knuckle, xBar = xC2 + col, xEnd = xBar + barL;
+
+// ----- vue 1 : de dessus -----
+{
+  const svg = document.getElementById('v1'); defs(svg);
+  const tabW = 2.6 * S, barW = 1.6 * S, colW = 4.5 * S, kW = 3.2 * S, off = 1.0 * S;
+  rect(svg, xTab, cy - tabW / 2, tabL + 2, tabW);
+  el(svg, 'circle', { cx: xC1 - 2 * S, cy, r: 0.5 * S, fill: '#fff', stroke: css('--metal-line'), 'stroke-width': 1.5 });
+  rect(svg, xC1, cy - colW / 2, col, colW);
+  rect(svg, xK, cy - kW / 2, knuckle, kW);
+  el(svg, 'circle', { cx: xK + knuckle / 2, cy, r: 0.7 * S, ...metal });
+  el(svg, 'line', { x1: xK + knuckle / 2 - 0.6 * S, y1: cy, x2: xK + knuckle / 2 + 0.6 * S, y2: cy, stroke: css('--metal-line'), 'stroke-width': 2 });
+  rect(svg, xC2, cy - colW / 2, col, colW);
+  rect(svg, xBar - 2, cy + off - barW / 2, barL + 2, barW);
+  // axes
+  el(svg, 'line', { x1: xTab - 20, y1: cy, x2: xC2 + col, y2: cy, 'stroke-width': 0.8, stroke: css('--muted'), 'stroke-dasharray': '10 4 2 4' });
+  el(svg, 'line', { x1: xC2 + col, y1: cy, x2: xEnd + 115, y2: cy, stroke: css('--muted'), 'stroke-dasharray': '10 4 2 4', 'stroke-width': 0.8 });
+  el(svg, 'line', { x1: xBar, y1: cy + off, x2: xEnd + 115, y2: cy + off, stroke: css('--muted'), 'stroke-dasharray': '10 4 2 4', 'stroke-width': 0.8 });
+  hdim(svg, xTab, xC1, 60, cy - tabW / 2, 'A', true);
+  hdim(svg, xC1 - 2 * S, xC1, 245, cy + 0.5 * S, 'D');
+  hdim(svg, xC1, xBar, 40, cy - colW / 2, 'E');
+  hdim(svg, xBar, xEnd, 60, cy + off - barW / 2, 'F');
+  vdim(svg, cy - tabW / 2, cy + tabW / 2, x0 - 40, xTab, 'B');
+  vdim(svg, cy + off - barW / 2, cy + off + barW / 2, xEnd + 45, xEnd, 'H');
+  vdim(svg, cy, cy + off, xEnd + 110, xEnd + 110, 'M');
+  caption(svg, (xTab + xC1) / 2, 285, 'patte côté face');
+  caption(svg, xK + knuckle / 2, 285, 'vis de charnière');
+  caption(svg, (xBar + xEnd) / 2, 285, 'tige côté branche');
+}
+
+// ----- vue 2 : de côté -----
+{
+  const svg = document.getElementById('v2'); defs(svg);
+  const tabH = 1.4 * S, barH = 2.2 * S, colH = 6 * S, kH = 4.2 * S;
+  rect(svg, xTab, cy - tabH / 2, tabL + 2, tabH);
+  rect(svg, xC1, cy - colH / 2, col, colH);
+  rect(svg, xK, cy - kH / 2, knuckle, kH);
+  rect(svg, xC2, cy - colH / 2, col, colH);
+  rect(svg, xBar - 2, cy - barH / 2, barL + 2, barH);
+  el(svg, 'circle', { cx: xC2 + col + 8.1 * S, cy, r: 0.5 * S, fill: '#fff', stroke: css('--metal-line'), 'stroke-width': 1.5 });
+  vdim(svg, cy - tabH / 2, cy + tabH / 2, x0 - 30, xTab, 'C');
+  vdim(svg, cy - colH / 2, cy + colH / 2, x0 - 85, xC1, 'K', true);
+  vdim(svg, cy - barH / 2, cy + barH / 2, xEnd + 45, xEnd, 'G');
+  hdim(svg, xBar, xBar + 8.1 * S, 245, cy + 0.5 * S, 'I', true);
+  // flèches des vis
+  const arrow = (x1, y1, x2, y2, t, tx, ty) => {
+    el(svg, 'line', { x1, y1, x2, y2, stroke: css('--known'), 'stroke-width': 2, 'marker-end': `url(#arr${svg.id})` });
+    el(svg, 'text', { x: tx, y: ty, 'font-size': 13, fill: css('--known'), 'text-anchor': 'middle' }, t);
+  };
+  arrow(xC1 - 2 * S, 270, xC1 - 2 * S, cy + tabH / 2 + 6, 'vis longue (sous le tenon)', xC1 - 2 * S, 292);
+  caption(svg, xBar + 8.1 * S, 40, 'trou de la vis courte (par l’intérieur de la branche)');
+}
+</script>
+</body>
+</html>
