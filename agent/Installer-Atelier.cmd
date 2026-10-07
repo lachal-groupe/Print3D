@@ -26,7 +26,7 @@ $ProgressPreference = 'SilentlyContinue'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
 # Adresse du site de l'atelier (fichiers de l'agent). Remplie lors de la mise en ligne.
-$Site = 'https://lachal-groupe.github.io'
+$Site = 'https://lachal-groupe.github.io/Print3D'
 $PythonUrl = 'https://www.python.org/ftp/python/3.12.8/python-3.12.8-embed-amd64.zip'
 $OrcaUrl = 'https://github.com/OrcaSlicer/OrcaSlicer/releases/download/v2.4.2/OrcaSlicer_Windows_V2.4.2_x64_portable.zip'
 $Dir = if ($env:ATELIER_APP_DIR) { $env:ATELIER_APP_DIR } else { Join-Path $env:LOCALAPPDATA 'AtelierMonture' }
