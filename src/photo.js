@@ -114,8 +114,17 @@ export function openPhotoEditor({ oma, dbl, outline, edit, onApply, onClear }) {
     const c = Math.cos(st.rot), s = Math.sin(st.rot);
     return [c * dx + s * dy, s * dx - c * dy];
   };
-  const toScreen = ([ix, iy]) => [st.view.x + ix * st.view.k, st.view.y + iy * st.view.k];
-  const fromScreen = (sx, sy) => [(sx - st.view.x) / st.view.k, (sy - st.view.y) / st.view.k];
+  // vue : le point image (cx, cy) au point écran (x, y), échelle k, photo tournée de a (la monture s'affiche
+  // à l'horizontale même si la photo a été prise dans un autre sens)
+  const toScreen = ([ix, iy]) => {
+    const { k, x, y, a = 0, cx = 0, cy = 0 } = st.view, c = Math.cos(a), sn = Math.sin(a);
+    return [x + k * (c * (ix - cx) - sn * (iy - cy)), y + k * (sn * (ix - cx) + c * (iy - cy))];
+  };
+  const fromScreen = (sx, sy) => {
+    const { k, x, y, a = 0, cx = 0, cy = 0 } = st.view, c = Math.cos(a), sn = Math.sin(a);
+    const dx = (sx - x) / k, dy = (sy - y) / k;
+    return [cx + c * dx + sn * dy, cy - sn * dx + c * dy];
+  };
   const mmToScreen = q => toScreen(toImg(q));
   const screenToMm = (sx, sy) => imgToMm(...fromScreen(sx, sy));
   // demi-contour : stocké côté x ≤ 0 ; affiché (et saisi) côté x ≥ 0 quand le modèle est à droite de l'image
@@ -131,8 +140,20 @@ export function openPhotoEditor({ oma, dbl, outline, edit, onApply, onClear }) {
     canvas.style.width = r.width + 'px';
     canvas.style.height = r.height + 'px';
     if (!st.img) return;
-    const k = Math.min(r.width / st.iw, r.height / st.ih) * 0.96;
-    st.view = { k, x: (r.width - st.iw * k) / 2, y: (r.height - st.ih * k) / 2 };
+    if (st.step === 2) {
+      // contour : monture à l'horizontale, cadrée au plus près (verres + tenons + marge)
+      const W = (st.dbl + lenses[0].src.width + lenses[1].src.width + 40) * st.s;
+      const H = (Math.max(lenses[0].src.height, lenses[1].src.height) + 30) * st.s;
+      const k = Math.min(r.width / W, r.height / H);
+      st.view = { k, x: r.width / 2, y: r.height / 2, a: -st.rot, cx: st.ox, cy: st.oy };
+    } else {
+      // calage : photo entière, tournée d'un quart de tour si la monture est en hauteur
+      const a = -Math.round(st.rot / (Math.PI / 2)) * (Math.PI / 2);
+      const W = Math.abs(Math.cos(a)) * st.iw + Math.abs(Math.sin(a)) * st.ih;
+      const H = Math.abs(Math.sin(a)) * st.iw + Math.abs(Math.cos(a)) * st.ih;
+      const k = Math.min(r.width / W, r.height / H) * 0.96;
+      st.view = { k, x: r.width / 2, y: r.height / 2, a, cx: st.iw / 2, cy: st.ih / 2 };
+    }
   }
 
   // ---------- image ----------
@@ -426,12 +447,15 @@ export function openPhotoEditor({ oma, dbl, outline, edit, onApply, onClear }) {
         return { inn: [x * (1 - 2.2 / r), y * (1 - 2.2 / r)], out: [x * (1 - 0.2 / r), y * (1 - 0.2 / r)] };
       });
     });
-    const c = Math.cos(st.rot), sn = Math.sin(st.rot);
+    let c = Math.cos(st.rot), sn = Math.sin(st.rot);
     const score = (probe, s, cx, cy) => {
       let n = 0;
+      // un vrai bord d'ouverture vaut 1 (fond juste à l'intérieur ET monture juste à l'extérieur) ; une branche
+      // repliée vue derrière le verre ne crée pas de bord, elle ne compte que pour un peu (0,2)
       for (const { inn, out } of probe) {
-        if (isBg(cx + s * (c * inn[0] + sn * inn[1]), cy + s * (sn * inn[0] - c * inn[1]))) n += 0.5; // moitié : une branche repliée peut se voir derrière le verre
-        if (!isBg(cx + s * (c * out[0] + sn * out[1]), cy + s * (sn * out[0] - c * out[1]))) n++;
+        const bgIn = isBg(cx + s * (c * inn[0] + sn * inn[1]), cy + s * (sn * inn[0] - c * inn[1]));
+        const solidOut = !isBg(cx + s * (c * out[0] + sn * out[1]), cy + s * (sn * out[0] - c * out[1]));
+        n += bgIn && solidOut ? 1 : solidOut || bgIn ? 0.2 : 0;
       }
       return n;
     };
@@ -461,6 +485,30 @@ export function openPhotoEditor({ oma, dbl, outline, edit, onApply, onClear }) {
     const df = 0.03 * Math.max(1, (fHi - fLo) / 0.6);
     const coarse = search(range(fLo, fHi, df), [bR, bL], 6, 0.6);
     const best = search(range(coarse.f - df, coarse.f + df, 0.005), coarse.fits, 0.6, 0.15);
+    if (best && oma.dbl) {
+      // L'OMA donne le pont de cette monture : le verre le mieux vu (meilleur score) sert d'ancre, et l'autre
+      // est posé à la bonne distance ; on cherche la rotation (±12°) et un petit jeu (±1,5 mm) qui le posent
+      // sur son ouverture. Un verre caché par une branche repliée ne fait plus dériver le calage.
+      const s = best.s, gap = ((lenses[0].src.width + lenses[1].src.width) / 2 + oma.dbl) * s;
+      const ai = best.fits[0].v >= best.fits[1].v ? 0 : 1, anchor = best.fits[ai];
+      const rot0 = Math.atan2(best.fits[1].cy - best.fits[0].cy, best.fits[1].cx - best.fits[0].cx);
+      let top = null;
+      for (let t = -12; t <= 12; t += 0.5) {
+        const r = rot0 + (t * Math.PI) / 180;
+        c = Math.cos(r); sn = Math.sin(r);
+        const sg = ai === 0 ? 1 : -1; // l'autre verre est à droite (vers +x du porteur) de l'ancre droite, et inversement
+        const ox = anchor.cx + sg * gap * c, oy = anchor.cy + sg * gap * sn;
+        let bo = { v: -1 };
+        for (let dx = -1.5; dx <= 1.5001; dx += 0.3) for (let dy = -1.5; dy <= 1.5001; dy += 0.3) {
+          const v = score(probes[1 - ai], s, ox + dx * s, oy + dy * s);
+          if (v > bo.v) bo = { v, cx: ox + dx * s, cy: oy + dy * s };
+        }
+        const v = score(probes[ai], s, anchor.cx, anchor.cy) + bo.v;
+        if (!top || v > top.v) top = { v, other: bo };
+      }
+      // retenu sauf s'il est nettement moins bon que le calage libre (pont de l'OMA faux, autre monture…)
+      if (top && top.v >= 0.85 * best.v) best.fits = ai === 0 ? [anchor, top.other] : [top.other, anchor];
+    }
     if (best) {
       const [fR, fL] = best.fits;
       st.s = st.s0 = best.s;
@@ -642,6 +690,8 @@ export function openPhotoEditor({ oma, dbl, outline, edit, onApply, onClear }) {
       ctx.save();
       ctx.translate(st.view.x, st.view.y);
       ctx.scale(st.view.k, st.view.k);
+      ctx.rotate(st.view.a || 0);
+      ctx.translate(-(st.view.cx || 0), -(st.view.cy || 0));
       if (mirrored) {
         // réflexion par rapport à l'axe de symétrie (droite passant par O, dirigée selon +y du repère mm)
         const dx = Math.sin(st.rot), dy = -Math.cos(st.rot);
@@ -835,7 +885,8 @@ export function openPhotoEditor({ oma, dbl, outline, edit, onApply, onClear }) {
     if (k === 'dbl') st.dbl = +e.target.value;
     if (k === 'rot') st.rot = (+e.target.value * Math.PI) / 180;
     if (k === 'scale' && st.iw) st.s = st.s0 * Math.exp(+e.target.value);
-    if (k === 'mirror') { st.mirror = e.target.checked; buildPixels(); autoCalibrate(); }
+    if (k === 'mirror') { st.mirror = e.target.checked; buildPixels(); autoCalibrate(); fit(); }
+    if (k === 'rot') fit(); // passage d'un quart de tour à l'autre
     if (k === 'thr') { st.thr = +e.target.value; st.thrAuto = false; propose(); }
     if (k === 'smooth') st.smooth = +e.target.value;
     if (k === 'symphoto') st.symPhoto = e.target.checked;
@@ -856,6 +907,7 @@ export function openPhotoEditor({ oma, dbl, outline, edit, onApply, onClear }) {
     root.querySelectorAll('.steps li').forEach(li => li.classList.toggle('on', +li.dataset.step === n));
     root.querySelectorAll('.step-pane').forEach(p => { p.hidden = +p.dataset.pane !== n; });
     canvas.style.cursor = n === 1 ? 'grab' : st.mode === 'draw' ? 'crosshair' : 'default';
+    fit(); // calage : photo entière ; contour : monture cadrée à l'horizontale
     draw();
   };
   root.addEventListener('click', e => {
@@ -873,7 +925,7 @@ export function openPhotoEditor({ oma, dbl, outline, edit, onApply, onClear }) {
     const act = e.target.closest('[data-act]')?.dataset.act;
     if (!act) return;
     if (act === 'close') close();
-    if (act === 'auto' && st.img) { autoCalibrate(); syncOutputs(); draw(); }
+    if (act === 'auto' && st.img) { autoCalibrate(); fit(); syncOutputs(); draw(); }
     if (act === 'next' && st.img) { if (st.poly.length < 3) propose(); setStep(2); }
     if (act === 'propose' && st.img) { propose(); setMode('edit'); draw(); }
     if (act === 'clearpoly') { st.poly = []; st.drawing = false; setMode('draw'); draw(); }
