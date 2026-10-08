@@ -37,11 +37,11 @@ export function openPhotoEditor({ oma, dbl, outline, edit, onApply, onClear }) {
               avec les verres de la photo, sinon : <b>glisser</b> pour déplacer, <b>molette</b> pour l'échelle,
               et les curseurs ci-dessous.</p>
             <div class="field"><label>Écart entre les verres (DBL)</label>
-              <div class="inputs"><input type="range" data-k="dbl" min="8" max="30" step="0.1"><output data-o="dbl"></output></div></div>
+              <div class="inputs"><input type="range" data-k="dbl" min="8" max="30" step="0.1"><input type="number" data-n="dbl" min="8" max="30" step="0.1"><span class="unit">mm</span></div></div>
             <div class="field"><label>Rotation</label>
-              <div class="inputs"><input type="range" data-k="rot" min="-180" max="180" step="0.1"><output data-o="rot"></output></div></div>
-            <div class="field"><label>Échelle</label>
-              <div class="inputs"><input type="range" data-k="scale" min="-1" max="1" step="0.002" value="0"><output data-o="scale"></output></div></div>
+              <div class="inputs"><input type="range" data-k="rot" min="-180" max="180" step="0.1"><input type="number" data-n="rot" min="-180" max="180" step="0.1"><span class="unit">°</span></div></div>
+            <div class="field"><label>Échelle (pixels par mm)</label>
+              <div class="inputs"><input type="range" data-k="scale" min="-1" max="1" step="0.002" value="0"><input type="number" data-n="spx" min="0.5" max="80" step="0.01"><span class="unit">px</span></div></div>
             <label class="check"><input type="checkbox" data-k="mirror"> Photo prise de dos (miroir)</label>
             <button class="wide" data-act="auto">Recaler automatiquement</button>
             <button class="primary wide" data-act="next">Dessiner le contour →</button>
@@ -61,12 +61,13 @@ export function openPhotoEditor({ oma, dbl, outline, edit, onApply, onClear }) {
               <button type="button" data-mode="draw">Dessiner</button>
             </div>
             <p class="hint" data-hint></p>
+            <p class="hint"><b>Double-clic</b> sur le trait : ajouter un point · <b>clic droit</b> sur un point : le supprimer.</p>
             <div class="row2"><button data-act="propose">Proposition auto</button><button data-act="clearpoly">Effacer</button></div>
             <div class="field"><label>Lissage des angles</label>
-              <div class="inputs"><input type="range" data-k="smooth" min="0" max="6" step="0.1" value="2"><output data-o="smooth">2,0 mm</output></div>
+              <div class="inputs"><input type="range" data-k="smooth" min="0" max="6" step="0.1" value="2"><input type="number" data-n="smooth" min="0" max="6" step="0.1"><span class="unit">mm</span></div>
               <p class="hint">Rayon d’arrondi. Les angles vifs (plus de 60°, ex. tenons) restent nets.</p></div>
-            <div class="field"><label>Sensibilité de la proposition</label>
-              <div class="inputs"><input type="range" data-k="thr" min="5" max="200" step="1" value="45"><output data-o="thr">auto</output></div>
+            <div class="field"><label>Sensibilité de la proposition <span data-o="thrauto"></span></label>
+              <div class="inputs"><input type="range" data-k="thr" min="5" max="200" step="1" value="45"><input type="number" data-n="thr" min="5" max="200" step="1"><span class="unit"></span></div>
               <p class="hint">Réglée automatiquement pour chaque photo. Plus bas = plus de monture, plus haut = moins d’ombres.</p></div>
             <div class="row2"><button data-act="back">← Calage</button><button class="primary" data-act="apply">Utiliser</button></div>
           </div>
@@ -854,10 +855,10 @@ export function openPhotoEditor({ oma, dbl, outline, edit, onApply, onClear }) {
 
   // ---------- panneau ----------
   const HINTS = {
-    edit: '<b>Glisser</b> un point pour le déplacer, <b>double-clic</b> sur un trait pour ajouter un point, <b>clic droit</b> sur un point pour le supprimer.',
+    edit: '<b>Glisser</b> un point pour le déplacer.',
     draw: 'Cliquez pour poser les points tout autour de la face (nez et tenons compris). <b>Revenez sur le premier point</b> pour fermer : le trait passe au <b style="color:#a3e635">vert</b>.',
     drawSym: 'Partez du <b>haut du pont, sur l’axe</b>, faites le tour du côté modèle et <b>revenez sur l’axe</b> en bas : le trait passe au <b style="color:#a3e635">vert</b> et la forme se ferme, l’autre côté suit en miroir.',
-    done: '<b style="color:#a3e635">✓ Forme fermée.</b> Vous pouvez encore <b>glisser</b> les points, <b>double-cliquer</b> sur un trait pour en ajouter, <b>clic droit</b> pour en supprimer.',
+    done: '<b style="color:#a3e635">✓ Forme fermée.</b> Vous pouvez encore <b>glisser</b> les points pour l’ajuster.',
   };
   function setMode(m) {
     st.mode = m;
@@ -867,20 +868,31 @@ export function openPhotoEditor({ oma, dbl, outline, edit, onApply, onClear }) {
   }
   function syncOutputs() {
     $('[data-k="dbl"]').value = st.dbl;
-    $('[data-o="dbl"]').textContent = `${st.dbl.toFixed(1)} mm`;
     $('[data-k="rot"]').value = (st.rot * 180) / Math.PI;
-    $('[data-o="rot"]').textContent = `${((st.rot * 180) / Math.PI).toFixed(1)}°`;
     $('[data-k="scale"]').value = Math.log(st.s / st.s0);
-    $('[data-o="scale"]').textContent = st.iw ? `${st.s.toFixed(2)} px/mm` : '—';
     $('[data-k="smooth"]').value = st.smooth;
-    $('[data-o="smooth"]').textContent = st.smooth > 0 ? `${st.smooth.toFixed(1).replace('.', ',')} mm` : 'aucun';
     $('[data-k="thr"]').value = st.thr;
-    $('[data-o="thr"]').textContent = st.thrAuto ? `auto (${Math.round(st.thr)})` : `${Math.round(st.thr)}`;
+    // champs chiffrés (flèches ↑ ↓) : on ne réécrit pas celui qu'on est en train de taper
+    const nums = { dbl: st.dbl.toFixed(1), rot: ((st.rot * 180) / Math.PI).toFixed(1), spx: st.iw ? st.s.toFixed(2) : '',
+      smooth: st.smooth.toFixed(1), thr: Math.round(st.thr) };
+    for (const [n, v] of Object.entries(nums)) { const el = $(`[data-n="${n}"]`); if (el !== document.activeElement) el.value = v; }
+    $('[data-o="thrauto"]').textContent = st.thrAuto ? '(auto)' : '';
     root.querySelectorAll('input[type=range]').forEach(el => {
       el.style.setProperty('--p', `${((el.value - el.min) / (el.max - el.min)) * 100}%`);
     });
   }
   root.addEventListener('input', e => {
+    // champs chiffrés : même effet que le curseur correspondant
+    const n = e.target.dataset.n, v = +e.target.value;
+    if (n && e.target.value !== '' && Number.isFinite(v)) {
+      if (n === 'dbl') st.dbl = v;
+      if (n === 'rot') { st.rot = (v * Math.PI) / 180; fit(); }
+      if (n === 'spx' && st.iw && v > 0) st.s = v;
+      if (n === 'smooth') st.smooth = Math.max(0, v);
+      if (n === 'thr') { st.thr = v; st.thrAuto = false; if (st.img) propose(); }
+      syncOutputs(); draw();
+      return;
+    }
     const k = e.target.dataset.k;
     if (k === 'dbl') st.dbl = +e.target.value;
     if (k === 'rot') st.rot = (+e.target.value * Math.PI) / 180;

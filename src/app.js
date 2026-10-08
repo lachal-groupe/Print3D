@@ -380,6 +380,14 @@ function buildControls() {
           regenerate();
         };
         range.addEventListener('input', () => set(+range.value));
+        // flèches ↑ ↓ du clavier (Maj : pas × 10) : effet immédiat ; les petites flèches du champ déclenchent « change »
+        const dec = (String(f.step).split('.')[1] || '').length;
+        num.addEventListener('keydown', e => {
+          if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+          e.preventDefault();
+          const step = +f.step * (e.shiftKey ? 10 : 1), v = (+num.value || 0) + (e.key === 'ArrowUp' ? step : -step);
+          set(+Math.min(f.max, Math.max(f.min, v)).toFixed(dec));
+        });
         num.addEventListener('change', () => set(+num.value));
         row.sync = () => { range.value = params[f.k] ?? ''; num.value = params[f.k] ?? ''; fillTrack(range); };
       }
