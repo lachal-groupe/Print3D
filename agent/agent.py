@@ -15,13 +15,14 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import threading
 import time
 import traceback
 import urllib.request
 
-VERSION = '1.1.0'
+VERSION = '1.2.0'
 PORT = 47913
 # ATELIER_APP_DIR : dossier de travail de remplacement, pour les essais sans toucher à l'installation
 APP_DIR = os.environ.get('ATELIER_APP_DIR') or os.path.join(os.environ.get('LOCALAPPDATA', os.path.expanduser('~')), 'AtelierMonture')
@@ -31,7 +32,7 @@ NO_WINDOW = 0x08000000 if os.name == 'nt' else 0  # CREATE_NO_WINDOW
 # La liste peut être restreinte dans %LOCALAPPDATA%\AtelierMonture\config.json (« allowed_origins »).
 # Site de l'atelier : l'agent y reprend les derniers réglages d'impression (config.json : « site »).
 DEFAULT_SITE = 'https://lachal-groupe.github.io/Print3D'
-PROFILE_REFRESH = 6 * 3600  # secondes entre deux mises à jour des réglages
+PROFILE_REFRESH = 10 * 60  # secondes entre deux mises à jour des réglages (aussi faites avant une découpe)
 DEFAULT_ORIGINS = [r'^https://lachal-groupe\.github\.io$', r'^http://(localhost|127\.0\.0\.1)(:\d+)?$']
 
 
@@ -69,9 +70,16 @@ def machines():
         return {}
 
 
+LAST_PROFILES = [0.0]  # heure de la dernière mise à jour réussie des réglages
+
+
+def site():
+    return (config().get('site') or DEFAULT_SITE).rstrip('/')
+
+
 def update_profiles():
     """Télécharge les réglages d'impression publiés sur le site ; garde ceux du PC si le site est injoignable."""
-    base = (config().get('site') or DEFAULT_SITE).rstrip('/') + '/agent/profiles/'
+    base = site() + '/agent/profiles/'
     prof = os.path.join(APP_DIR, 'profiles')
 
     def fetch(name):
@@ -105,6 +113,7 @@ def update_profiles():
         changed += 1
     if changed:
         log(f"réglages d’impression mis à jour depuis le site ({changed} fichiers)")
+    LAST_PROFILES[0] = time.time()
     return True
 
 
@@ -114,10 +123,36 @@ def profile_updater():
         time.sleep(PROFILE_REFRESH)
 
 
+def self_update():
+    """Remplace agent.py par la version publiée sur le site (vérifiée avant : fichier Python valide)."""
+    with urllib.request.urlopen(site() + '/agent/agent.py', timeout=30) as r:
+        code = r.read()
+    compile(code, 'agent.py', 'exec')  # refuse un fichier abîmé ou tronqué
+    if b"agent': 'atelier-monture'" not in code:
+        raise RuntimeError('fichier inattendu')
+    path = os.path.abspath(__file__)
+    with open(path + '.new', 'wb') as fh:
+        fh.write(code)
+    os.replace(path + '.new', path)
+    update_profiles()
+    log('agent mis à jour depuis le site, redémarrage')
+
+
+def restart(server):
+    """Relance l'agent (nouvelle version) dans un processus invisible, puis arrête celui-ci."""
+    time.sleep(0.3)  # laisse partir la réponse au site
+    subprocess.Popen([sys.executable, os.path.abspath(__file__), '--agent', '--wait'], cwd=APP_DIR,
+                     creationflags=NO_WINDOW | 0x00000008, close_fds=True)  # 0x8 : DETACHED_PROCESS
+    server.shutdown()
+    os._exit(0)
+
+
 # ---------------------------------------------------------------- découpe
 
 def slice_3mf(machine_id, data, quality='fine'):
     """Découpe le .3mf reçu avec les profils de la machine ; renvoie (nom de fichier, contenu)."""
+    if time.time() - LAST_PROFILES[0] > PROFILE_REFRESH:
+        update_profiles()  # derniers réglages publiés (remplissage, températures…) avant de découper
     orca = find_orca()
     if not orca:
         raise RuntimeError('OrcaSlicer est introuvable : relancez l’installation de l’agent.')
@@ -218,6 +253,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.reply(200, {'ok': True})
             threading.Thread(target=self.server.shutdown, daemon=True).start()
             return
+        if self.path.startswith('/update'):
+            # mise à jour demandée depuis le site (bouton « Mettre à jour l'agent »)
+            try:
+                self_update()
+            except Exception as e:
+                log('mise à jour impossible : ' + traceback.format_exc())
+                return self.reply(500, {'error': f'Mise à jour impossible : {e}'})
+            self.reply(200, {'ok': True, 'restarting': True})
+            threading.Thread(target=restart, args=(self.server,), daemon=True).start()
+            return
         m = re.match(r'^/slice\?machine=([a-z0-9]+)(?:&quality=([a-z]+))?', self.path)
         if not m:
             return self.reply(404, {'error': 'Inconnu'})
@@ -243,6 +288,11 @@ def agent_running():
 
 
 def run_agent():
+    if '--wait' in sys.argv:  # relance après mise à jour : l'ancienne version libère le port
+        for _ in range(50):
+            if not agent_running():
+                break
+            time.sleep(0.3)
     if agent_running():
         return
     log(f'démarrage de l’agent {VERSION}')

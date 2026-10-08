@@ -106,7 +106,8 @@ const GROUPS = [
     r('barH', 'G · Tige : hauteur', 0.8, 4.5, 0.05, 'mm', 'Vue 2, la face où l’on voit le trou'),
     r('barW', 'H · Tige : épaisseur', 0.5, 4, 0.05, 'mm', 'Vue 1, traversée par la vis courte'),
     r('barHolePos', 'I · Tige : collerette → trou', 3, 13, 0.05),
-    r('slotClear', 'Jeu des logements', 0, 0.5, 0.05),
+    r('slotClear', 'Jeu des logements (face)', 0, 0.5, 0.05),
+    r('templeSlotClear', 'Jeu du logement (branche)', 0, 0.6, 0.05, 'mm', 'Trou carré où entre la tige de la charnière'),
     r('tenonScrewD', 'Vis longue : trou', 0.6, 1.6, 0.05, 'mm', 'Vis Ø 1 mm : passe librement, se visse dans l’insert fileté'),
     r('tenonScrewLen', 'Vis longue : longueur', 3, 9, 0.1),
     r('templeScrewD', 'Vis courte : trou', 0.6, 1.6, 0.05, 'mm', 'Vis Ø 1 mm par l’intérieur de la branche : passe librement jusqu’à l’insert'),
@@ -538,6 +539,12 @@ let machines = {
   k1max: { label: 'Creality K1 Max', bed: [300, 300], output: 'gcode' },
 };
 let agentOk = false;
+let agentVersion = null, latestAgent = null; // version de l'agent sur ce PC / version publiée sur le site
+const newer = (a, b) => { // a plus récente que b ? (versions « 1.2.0 »)
+  const x = String(a).split('.').map(Number), y = String(b).split('.').map(Number);
+  for (let i = 0; i < 3; i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0);
+  return false;
+};
 const store = { get: k => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* stockage indisponible */ } } };
 
 function fillMachines() {
@@ -553,12 +560,43 @@ async function checkAgent() {
     st = await r.json();
   } catch { /* agent absent */ }
   agentOk = !!(st && st.agent === 'atelier-monture' && st.orca);
+  agentVersion = agentOk ? st.version : null;
   if (st?.machines && Object.keys(st.machines).length) { machines = st.machines; fillMachines(); }
+  if (agentOk && !latestAgent) {
+    try { latestAgent = (await (await fetch('agent/version.json', { cache: 'no-store' })).json()).agent; } catch { /* hors ligne */ }
+  }
+  const update = agentOk && latestAgent && newer(latestAgent, agentVersion);
   const b = $('#agent');
-  b.classList.toggle('ok', agentOk);
+  b.classList.toggle('ok', agentOk && !update);
+  b.classList.toggle('update', !!update);
   b.classList.toggle('off', !agentOk);
-  b.querySelector('.lbl').textContent = agentOk ? 'Agent prêt' : 'Agent absent';
-  b.title = agentOk ? `Agent d’impression ${st.version} connecté` : 'Installer l’agent d’impression';
+  b.querySelector('.lbl').textContent = update ? 'Mettre à jour l’agent' : agentOk ? 'Agent prêt' : 'Agent absent';
+  b.title = update ? `Nouvelle version ${latestAgent} disponible (installée : ${agentVersion}) : un clic suffit`
+    : agentOk ? `Agent d’impression ${st.version} connecté` : 'Installer l’agent d’impression';
+}
+
+// Mise à jour en un clic : l'agent télécharge sa nouvelle version sur le site, la vérifie, se remplace et
+// redémarre seul (quelques secondes). Un agent trop ancien pour savoir le faire : on repasse par l'installeur.
+async function updateAgent() {
+  const b = $('#agent');
+  b.disabled = true;
+  b.querySelector('.lbl').textContent = 'Mise à jour…';
+  try {
+    const r = await fetch(`${AGENT}/update`, { method: 'POST' });
+    if (r.status === 404) { $('#agent-dialog').showModal(); return; }
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `erreur ${r.status}`);
+    for (let i = 0; i < 30; i++) { // l'agent redémarre
+      await new Promise(res => setTimeout(res, 1000));
+      await checkAgent();
+      if (agentOk && !newer(latestAgent, agentVersion)) break;
+    }
+    $('#status').textContent = `Agent d’impression mis à jour (${agentVersion ?? '…'})`;
+  } catch (e) {
+    $('#warnings').innerHTML += `<div>⚠ Mise à jour de l’agent : ${e.message}</div>`;
+  } finally {
+    b.disabled = false;
+    checkAgent();
+  }
 }
 
 async function printFile() {
@@ -600,13 +638,18 @@ $('#exp-3mf').addEventListener('click', () => {
   const m = machines[$('#machine').value];
   download(plate3MF(PART_SETS[$('#parts').value](), m.bed).blob, `${fileName || 'monture'}_${partsSuffix()}.3mf`);
 });
-$('#agent').addEventListener('click', () => { if (!agentOk) $('#agent-dialog').showModal(); else checkAgent(); });
+$('#agent').addEventListener('click', () => {
+  if (!agentOk) $('#agent-dialog').showModal();
+  else if (latestAgent && newer(latestAgent, agentVersion)) updateAgent();
+  else checkAgent();
+});
 $('#machine').addEventListener('change', e => store.set('atelier.machine', e.target.value));
 $('#quality').value = store.get('atelier.quality') || 'rapide';
 $('#quality').addEventListener('change', e => store.set('atelier.quality', e.target.value));
 fillMachines();
 checkAgent();
 setInterval(checkAgent, 15000);
+setInterval(() => { latestAgent = null; }, 3600000); // relit la version publiée une fois par heure
 $('#reset').addEventListener('click', () => {
   Object.assign(params, DEFAULTS, { dbl: oma && Number.isFinite(oma.dbl) ? oma.dbl : DEFAULTS.dbl });
   params.templeText = '';

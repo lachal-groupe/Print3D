@@ -58,11 +58,12 @@ export const DEFAULTS = {
   barW: 2.5,           // H  épaisseur traversée par la vis courte (épaisseur de la branche)
   barH: 2.5,           // G  hauteur
   barHolePos: 8.1,     // I  trou de vis, distance depuis la collerette
-  slotClear: 0.15,     // jeu des logements (impression)
+  slotClear: 0.15,     // jeu des logements de la face (impression)
+  templeSlotClear: 0.3, // jeu du logement de la tige dans la branche (essai réel : 0,15 trop serré, le PLA resserre)
   // Vis Ø 1 mm en trou borgne : la longue dans le tenon, la courte par l'intérieur de la branche
   tenonScrewD: 1.3,    // trou de passage de la vis longue (Ø 1) : imprimé ≈ 1,15, la vis passe librement et se visse dans l'insert fileté
   tenonScrewLen: 6.0,  // longueur de la vis longue
-  templeScrewD: 1.3,   // trou de passage de la vis courte, même diamètre que le tenon
+  templeScrewD: 1.45,  // trou de passage de la vis courte (essai réel : 1,3 encore trop petit dans la branche)
   templeScrewLen: 2.6, // longueur de la vis courte
   minSkin: 0.6,        // matière minimale laissée au fond d'un trou borgne
   hingeGap: 7.0,       // E  longueur visible de la charnière entre les collerettes
@@ -90,7 +91,7 @@ export const TEMPLE_SIZES = { S: 135, M: 140, L: 145 };
 
 // Cotes de charnière d'usine (fiche cotes-charniere.html), restaurées par « Cotes d'origine ».
 export const HINGE_KEYS = ['tabLen', 'tabW', 'tabH', 'tabHolePos', 'hingeGap', 'barLen', 'barH', 'barW', 'barHolePos',
-  'slotClear', 'tenonScrewD', 'tenonScrewLen', 'templeScrewD', 'templeScrewLen'];
+  'slotClear', 'templeSlotClear', 'tenonScrewD', 'tenonScrewLen', 'templeScrewD', 'templeScrewLen'];
 
 // Profils de branche vus de côté : points [position, hauteur] après la zone de charnière.
 // Position en mm si > 1, sinon en fraction de la longueur ; 'tip' = hauteur à l'embout.
@@ -694,7 +695,7 @@ export function buildTemples(wasm, p, warnings = []) {
   const kAt = u => (u <= u0 ? 1 : u >= u1 ? kMin : 1 + (kMin - 1) * smoothstep(u0, u1, u));
   const body = g(roundedExtrude(wasm, g(cs.add(tip)), tt, p.templeRound, g).warp(v => { v[2] *= kAt(v[0]); }));
   // logement de la tige de charnière + avant-trou de vis borgne depuis la face intérieure (w = épaisseur)
-  const c = p.slotClear;
+  const c = p.templeSlotClear;
   const slot = g(g(Manifold.cube([p.barLen + 0.3 + 1, p.barH + c, p.barW + c], false))
     .translate([-1, -(p.barH + c) / 2, tt / 2 - (p.barW + c) / 2]));
   const want = p.templeScrewLen + 0.3;
