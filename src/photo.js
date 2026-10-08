@@ -39,7 +39,7 @@ export function openPhotoEditor({ oma, dbl, outline, edit, onApply, onClear }) {
             <div class="field"><label>Écart entre les verres (DBL)</label>
               <div class="inputs"><input type="range" data-k="dbl" min="8" max="30" step="0.1"><output data-o="dbl"></output></div></div>
             <div class="field"><label>Rotation</label>
-              <div class="inputs"><input type="range" data-k="rot" min="-15" max="15" step="0.1"><output data-o="rot"></output></div></div>
+              <div class="inputs"><input type="range" data-k="rot" min="-180" max="180" step="0.1"><output data-o="rot"></output></div></div>
             <div class="field"><label>Échelle</label>
               <div class="inputs"><input type="range" data-k="scale" min="-1" max="1" step="0.002" value="0"><output data-o="scale"></output></div></div>
             <label class="check"><input type="checkbox" data-k="mirror"> Photo prise de dos (miroir)</label>
@@ -71,8 +71,9 @@ export function openPhotoEditor({ oma, dbl, outline, edit, onApply, onClear }) {
             <div class="row2"><button data-act="back">← Calage</button><button class="primary" data-act="apply">Utiliser</button></div>
           </div>
           ${outline ? '<button class="danger wide" data-act="clear">Revenir au dessin de l’atelier</button>' : ''}
-          <p class="mini">Conseil : photo bien de face, à 40 cm environ, sans flash, sur une feuille blanche
-            (monture foncée) ou noire (monture claire).</p>
+          <p class="mini">Conseil : monture posée à plat (branches pliées, dans n'importe quel sens) sur une feuille
+            blanche (monture foncée) ou noire (monture claire), téléphone bien à la verticale au-dessus, lumière
+            douce venant d'en haut, sans flash.</p>
         </aside>
       </div>
     </div>`;
@@ -226,8 +227,8 @@ export function openPhotoEditor({ oma, dbl, outline, edit, onApply, onClear }) {
   }
 
   // Carte de contraste pour la proposition de contour, moyennée sur des blocs de k×k pixels (le grain de
-  // la photo disparaît) : écart au fond en luminosité et en teinte, la teinte comptant double pour qu'une
-  // ombre grise sur la feuille pèse moins qu'une monture. Seuil choisi automatiquement (méthode d'Otsu).
+  // la photo disparaît) : écart au fond en luminosité et en teinte (la teinte compte double), les ombres
+  // portées étant atténuées. Seuil choisi automatiquement (méthode d'Otsu).
   function buildContrast() {
     const k = Math.max(1, Math.round(st.iw / 900));
     const w = Math.floor(st.iw / k), h = Math.floor(st.ih / k);
@@ -242,7 +243,11 @@ export function openPhotoEditor({ oma, dbl, outline, edit, onApply, onClear }) {
       r /= k * k; gr /= k * k; b /= k * k;
       const l = (r + gr + b) / 3;
       const dc = Math.hypot(r - l - (st.bg[0] - lb), gr - l - (st.bg[1] - lb), b - l - (st.bg[2] - lb));
-      map[x + y * w] = Math.hypot(l - lb, 2 * dc);
+      // ombre portée : moyennement assombrie et presque sans couleur (gris, souvent bleuté) — la monture est
+      // soit très sombre, soit nettement colorée ; l'ombre ne compte qu'à un quart
+      const sat = (Math.max(r, gr, b) - Math.min(r, gr, b)) / Math.max(1, Math.max(r, gr, b));
+      const shadow = l / lb > 0.45 && l / lb < 0.97 && sat < 0.2;
+      map[x + y * w] = Math.hypot(l - lb, 2 * dc) * (shadow ? 0.25 : 1);
     }
     const hist = new Float64Array(256);
     for (const v of map) hist[Math.min(255, v | 0)]++;
@@ -300,24 +305,25 @@ export function openPhotoEditor({ oma, dbl, outline, edit, onApply, onClear }) {
 
   // Les deux ouvertures des verres parmi les zones de fond enfermées (une feuille déchirée, une branche
   // ou un reflet peuvent en créer d'autres) : formes pleines aux proportions du verre OMA, de tailles
-  // voisines, côte à côte. Les morceaux d'une ouverture coupée par un trait (reflet, déchirure) y sont
-  // rattachés. Renvoie [ouvertures côté gauche de l'image, côté droit], ou null (verres morcelés, par
-  // exemple par les branches repliées : on garde alors le partage gauche / droite au plus grand écart).
+  // voisines, à bonne distance l'une de l'autre (photo dans n'importe quel sens). Les morceaux d'une
+  // ouverture coupée par un trait (reflet, déchirure) y sont rattachés. Renvoie les deux groupes, ou null
+  // (verres morcelés, par exemple par les branches repliées : voir twoClusters).
   function lensPair(holes) {
     const want = (lenses[0].src.width + lenses[1].src.width) / (lenses[0].src.height + lenses[1].src.height);
     const dims = c => ({ w: c.x1 - c.x0 + 1, h: c.y1 - c.y0 + 1, cx: c.sx / c.n, cy: c.sy / c.n });
     const big = Math.max(...holes.map(c => c.n));
-    const ok = holes.filter(c => { // verre vu en entier : forme pleine, proportions du verre, parmi les plus grandes
-      const d = dims(c), a = d.w / d.h / want;
-      return c.n > 0.35 * big && c.n / (d.w * d.h) > 0.5 && a > 0.65 && a < 1.5;
+    const ok = holes.filter(c => { // verre vu en entier : forme pleine, proportions du verre (ou tourné d'un quart de tour)
+      const d = dims(c), a = d.w / d.h / want, a2 = d.h / d.w / want;
+      return c.n > 0.35 * big && c.n / (d.w * d.h) > 0.5 && ((a > 0.65 && a < 1.5) || (a2 > 0.65 && a2 < 1.5));
     });
     let best = null;
     for (let i = 0; i < ok.length; i++) for (let j = i + 1; j < ok.length; j++) {
       const a = dims(ok[i]), b = dims(ok[j]);
       const size = Math.min(ok[i].n, ok[j].n) / Math.max(ok[i].n, ok[j].n);
-      if (size < 0.4 || Math.abs(a.cy - b.cy) > 0.5 * (a.h + b.h) / 2 || Math.abs(a.cx - b.cx) < 0.8 * (a.w + b.w) / 2) continue;
+      const dist = Math.hypot(a.cx - b.cx, a.cy - b.cy), dia = (Math.max(a.w, a.h) + Math.max(b.w, b.h)) / 2;
+      if (size < 0.4 || dist < 0.8 * dia || dist > 2.5 * dia) continue;
       const score = size * Math.sqrt(ok[i].n + ok[j].n); // ressemblance × taille
-      if (!best || score > best.score) best = { score, pair: a.cx < b.cx ? [ok[i], ok[j]] : [ok[j], ok[i]] };
+      if (!best || score > best.score) best = { score, pair: [ok[i], ok[j]] };
     }
     if (!best) return null;
     return best.pair.map(main => {
@@ -327,28 +333,79 @@ export function openPhotoEditor({ oma, dbl, outline, edit, onApply, onClear }) {
     });
   }
 
+  // Repli quand aucune paire de verres entiers n'est visible : partage des ouvertures en deux groupes
+  // (k-moyennes pondérées par la surface), en partant de la plus grande ouverture et de celle qui est à la
+  // fois grande et loin d'elle.
+  function twoClusters(holes) {
+    const c = h => [h.sx / h.n, h.sy / h.n];
+    const first = holes.reduce((a, b) => (b.n > a.n ? b : a));
+    let A = c(first), B = A, far = -1;
+    for (const h of holes) {
+      const v = h.n * Math.hypot(c(h)[0] - A[0], c(h)[1] - A[1]);
+      if (v > far) { far = v; B = c(h); }
+    }
+    let g = [[], []];
+    for (let it = 0; it < 10; it++) {
+      g = [[], []];
+      for (const h of holes) { const p = c(h); g[Math.hypot(p[0] - A[0], p[1] - A[1]) <= Math.hypot(p[0] - B[0], p[1] - B[1]) ? 0 : 1].push(h); }
+      const mean = grp => { const n = grp.reduce((t, h) => t + h.n, 0) || 1; return [grp.reduce((t, h) => t + h.sx, 0) / n, grp.reduce((t, h) => t + h.sy, 0) / n]; };
+      if (!g[0].length || !g[1].length) break;
+      A = mean(g[0]); B = mean(g[1]);
+    }
+    return g[0].length && g[1].length ? g : [holes.slice(0, 1), holes.slice(1)];
+  }
+
   // Calage automatique : les deux groupes d'ouvertures (gauche / droite de l'image) donnent
   // l'échelle (taille des verres), la rotation, la position et l'écart entre verres.
   function autoCalibrate() {
-    const { k, holes } = analyse();
+    const { k, w, h, lab, holes } = analyse();
     if (holes.length < 2) return false;
-    holes.sort((a, b) => a.sx / a.n - b.sx / b.n);
     const box = grp => grp.reduce((b, c) => ({ x0: Math.min(b.x0, c.x0), x1: Math.max(b.x1, c.x1), y0: Math.min(b.y0, c.y0), y1: Math.max(b.y1, c.y1) }),
       { x0: Infinity, x1: -Infinity, y0: Infinity, y1: -Infinity });
-    let groups = lensPair(holes);
-    if (!groups) { // repli : coupure au plus grand écart horizontal entre ouvertures
-      let cut = 1, gapMax = -1;
-      for (let i = 1; i < holes.length; i++) {
-        const gap = holes[i].sx / holes[i].n - holes[i - 1].sx / holes[i - 1].n;
-        if (gap > gapMax) { gapMax = gap; cut = i; }
-      }
-      groups = [holes.slice(0, cut), holes.slice(cut)];
-    }
-    const [bR, bL] = groups.map(box).map(b => ({
+    const groups = lensPair(holes) || twoClusters(holes);
+    let [bR, bL] = groups.map(box).map(b => ({
       cx: ((b.x0 + b.x1) / 2) * k, cy: ((b.y0 + b.y1) / 2) * k, w: (b.x1 - b.x0) * k, h: (b.y1 - b.y0) * k }));
-    // l'ouverture visible est le verre moins ~1,2 mm par côté (drageoir + tranche du verre)
-    const sBox = [[bR, lenses[0]], [bL, lenses[1]]].flatMap(([b, l]) => [b.w / (l.src.width - 2.4), b.h / (l.src.height - 2.4)]);
+    // Sens de la monture : le pont est au-dessus de l'axe des verres (le nez dégage le dessous). On compte
+    // la matière de part et d'autre de l'axe, entre les verres ; « haut » = côté le plus plein.
+    // Repère : x du porteur = de bR vers bL ; y (haut) = x tourné d'un quart de tour (y image vers le bas).
+    {
+      const L = Math.hypot(bL.cx - bR.cx, bL.cy - bR.cy) || 1;
+      const ux = (bL.cx - bR.cx) / L, uy = (bL.cy - bR.cy) / L; // vers bL
+      const upx = uy, upy = -ux; // haut supposé
+      const mx = (bR.cx + bL.cx) / 2, my = (bR.cy + bL.cy) / 2;
+      const reach = 0.35 * Math.max(bR.w, bR.h, bL.w, bL.h);
+      let above = 0, below = 0;
+      for (let t = 0.2; t <= 1; t += 0.1) for (let u = -0.12; u <= 0.12; u += 0.04) {
+        const px = mx + ux * u * L, py = my + uy * u * L;
+        const solid = (x, y) => {
+          const X = Math.round(x), Y = Math.round(y);
+          if (X < 0 || Y < 0 || X >= st.iw || Y >= st.ih) return 0;
+          const i = (Y * st.iw + X) * 4;
+          return Math.hypot(st.pix[i] - st.bg[0], st.pix[i + 1] - st.bg[1], st.pix[i + 2] - st.bg[2]) >= 45 ? 1 : 0;
+        };
+        above += solid(px + upx * t * reach, py + upy * t * reach);
+        below += solid(px - upx * t * reach, py - upy * t * reach);
+      }
+      if (below > above) [bR, bL] = [bL, bR]; // monture tête en bas dans ce sens : on inverse droite / gauche
+    }
+    // l'ouverture visible est le verre moins ~1,2 mm par côté (drageoir + tranche du verre) ; photo tournée :
+    // on compare la plus grande dimension de la boîte à celle du verre, et la plus petite à la plus petite
+    const sBox = [[bR, lenses[0]], [bL, lenses[1]]].flatMap(([b, l]) => [
+      Math.max(b.w, b.h) / (Math.max(l.src.width, l.src.height) - 2.4), Math.min(b.w, b.h) / (Math.min(l.src.width, l.src.height) - 2.4)]);
     st.s = st.s0 = Math.min(...sBox); // estimation de départ, affinée ci-dessous
+    // Seconde estimation, utile quand les branches repliées cachent une partie des verres : la largeur de
+    // la face le long de l'axe des verres ≈ deux verres + pont + ~6 mm de cercle et tenon de chaque côté.
+    let sFace = st.s;
+    {
+      const L = Math.hypot(bL.cx - bR.cx, bL.cy - bR.cy) || 1;
+      const ux = (bL.cx - bR.cx) / L, uy = (bL.cy - bR.cy) / L;
+      const proj = [];
+      for (let y = 0; y < h; y += 2) for (let x = 0; x < w; x += 2) if (lab[x + y * w] !== -2) proj.push((x * ux + y * uy) * k);
+      proj.sort((a, b) => a - b);
+      const extent = proj[Math.floor(proj.length * 0.99)] - proj[Math.floor(proj.length * 0.01)];
+      const mm = lenses[0].src.width + lenses[1].src.width + (oma.dbl || 18) + 12;
+      if (proj.length) sFace = extent / mm;
+    }
     st.rot = Math.atan2(bL.cy - bR.cy, bL.cx - bR.cx);
     st.ox = (bR.cx + bL.cx) / 2;
     st.oy = (bR.cy + bL.cy) / 2;
@@ -373,14 +430,14 @@ export function openPhotoEditor({ oma, dbl, outline, edit, onApply, onClear }) {
     const score = (probe, s, cx, cy) => {
       let n = 0;
       for (const { inn, out } of probe) {
-        if (isBg(cx + s * (c * inn[0] + sn * inn[1]), cy + s * (sn * inn[0] - c * inn[1]))) n++;
+        if (isBg(cx + s * (c * inn[0] + sn * inn[1]), cy + s * (sn * inn[0] - c * inn[1]))) n += 0.5; // moitié : une branche repliée peut se voir derrière le verre
         if (!isBg(cx + s * (c * out[0] + sn * out[1]), cy + s * (sn * out[0] - c * out[1]))) n++;
       }
       return n;
     };
     const s0 = st.s;
-    // recherche grossière (échelle de −20 % à +40 %, centres à ±6 mm : les ouvertures morcelées par les
-    // branches repliées donnent une boîte trop petite), puis fine autour du meilleur résultat
+    // recherche grossière (échelle entre les deux estimations, élargie ; centres à ±6 mm : les ouvertures
+    // morcelées par les branches repliées donnent une boîte trop petite), puis fine autour du meilleur
     const search = (fs, centers, span, step) => {
       let top = null;
       for (const f of fs) {
@@ -400,8 +457,10 @@ export function openPhotoEditor({ oma, dbl, outline, edit, onApply, onClear }) {
       return top;
     };
     const range = (a, b, d) => Array.from({ length: Math.round((b - a) / d) + 1 }, (_, i) => a + i * d);
-    const coarse = search(range(0.8, 1.4, 0.03), [bR, bL], 6, 0.6);
-    const best = search(range(coarse.f - 0.03, coarse.f + 0.03, 0.005), coarse.fits, 0.6, 0.15);
+    const fLo = 0.8 * Math.min(1, sFace / s0), fHi = 1.25 * Math.max(1.12, sFace / s0);
+    const df = 0.03 * Math.max(1, (fHi - fLo) / 0.6);
+    const coarse = search(range(fLo, fHi, df), [bR, bL], 6, 0.6);
+    const best = search(range(coarse.f - df, coarse.f + df, 0.005), coarse.fits, 0.6, 0.15);
     if (best) {
       const [fR, fL] = best.fits;
       st.s = st.s0 = best.s;
@@ -428,10 +487,90 @@ export function openPhotoEditor({ oma, dbl, outline, edit, onApply, onClear }) {
     const R = px(1.2);
     const near = morph(morph(morph(m, w, h, R, false), w, h, R, true), w, h, R + 1, true);
     for (let i = 0; i < m.length; i++) m[i] &= near[i];
+    // zone possible de la face (voir faceZone) : les bouts de branches repliées et les ombres qui dépassent
+    // ailleurs sont retirés
+    // Sous l'axe des verres, le cercle a une épaisseur à peu près régulière : on la mesure pour chaque verre
+    // (épaisseur maximale par secteur de 10°, on retient le 30e centile : les défauts ne font qu'ajouter) et
+    // on retire ce qui dépasse de plus de 2,5 mm (bouts de branches repliées, ombres).
+    const zone = faceZone();
+    const mmOf = new Float32Array(2 * w * h);
+    const sectors = new Float32Array(2 * 36);
+    const cx = [-(lenses[0].src.width + st.dbl) / 2, (lenses[1].src.width + st.dbl) / 2];
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const i = x + y * w;
+      if (!m[i]) continue;
+      const [qx, qy] = imgToMm((x + 0.5) * k, (y + 0.5) * k);
+      mmOf[2 * i] = qx; mmOf[2 * i + 1] = qy;
+      if (!zone.lower(qx, qy)) continue;
+      const dv = zone.dist(qx, qy);
+      if (dv > 20) continue;
+      const li = qx < 0 ? 0 : 1, sec = Math.floor(((Math.atan2(qy, qx - cx[li]) + 2 * Math.PI) % (2 * Math.PI)) / (Math.PI / 18));
+      sectors[li * 36 + sec] = Math.max(sectors[li * 36 + sec], dv);
+    }
+    const limit = [0, 1].map(li => {
+      const prof = [...sectors.slice(li * 36, li * 36 + 36)].filter(v => v > 0).sort((a, b) => a - b);
+      return prof.length >= 4 ? prof[Math.floor(prof.length * 0.3)] + 2.5 : 14;
+    });
+    for (let i = 0; i < m.length; i++) if (m[i] && !zone.test(mmOf[2 * i], mmOf[2 * i + 1], limit)) m[i] = 0;
     const r = px(0.5);
     m = morph(morph(m, w, h, r, false), w, h, r, true); // ouverture : moignons
     m = morph(morph(m, w, h, r, true), w, h, r, false); // fermeture : encoches
     return { k, w, h, m: fillOutside(m, w, h) };
+  }
+
+  // Zone où peut se trouver la face, en mm (repère des verres calés) : jusqu'à 14 mm autour de chaque verre
+  // (le calage peut décaler le verre d'un ou deux mm), sans limite au pont (moitié haute) ni aux tenons
+  // (côté extérieur, moitié haute). Le bas des cercles reçoit une limite plus serrée (voir silhouette).
+  function faceZone() {
+    const step = 0.5, reach = 14;
+    const half = st.dbl / 2 + Math.max(lenses[0].src.width, lenses[1].src.width);
+    const H = Math.max(lenses[0].src.height, lenses[1].src.height);
+    const x0 = -half - 25, y0 = -H / 2 - 15;
+    const gw = Math.ceil((2 * half + 50) / step), gh = Math.ceil((H + 30) / step);
+    // distance au verre le plus proche (chanfrein 3-4 sur une grille de 0,5 mm), 0 à l'intérieur des verres
+    const d = new Float32Array(gw * gh).fill(1e9);
+    const polys = lenses.map(lensPts);
+    const inside = (P, x, y) => {
+      let c = false;
+      for (let i = 0, j = P.length - 1; i < P.length; j = i++)
+        if ((P[i][1] > y) !== (P[j][1] > y) && x < ((P[j][0] - P[i][0]) * (y - P[i][1])) / (P[j][1] - P[i][1]) + P[i][0]) c = !c;
+      return c;
+    };
+    for (let gy = 0; gy < gh; gy++) for (let gx = 0; gx < gw; gx++) {
+      const x = x0 + gx * step, y = y0 + gy * step;
+      if (polys.some(P => inside(P, x, y))) d[gx + gy * gw] = 0;
+    }
+    const a = step, b = step * Math.SQRT2;
+    for (let gy = 0; gy < gh; gy++) for (let gx = 0; gx < gw; gx++) {
+      const i = gx + gy * gw;
+      if (gx > 0) d[i] = Math.min(d[i], d[i - 1] + a);
+      if (gy > 0) {
+        d[i] = Math.min(d[i], d[i - gw] + a);
+        if (gx > 0) d[i] = Math.min(d[i], d[i - gw - 1] + b);
+        if (gx < gw - 1) d[i] = Math.min(d[i], d[i - gw + 1] + b);
+      }
+    }
+    for (let gy = gh - 1; gy >= 0; gy--) for (let gx = gw - 1; gx >= 0; gx--) {
+      const i = gx + gy * gw;
+      if (gx < gw - 1) d[i] = Math.min(d[i], d[i + 1] + a);
+      if (gy < gh - 1) {
+        d[i] = Math.min(d[i], d[i + gw] + a);
+        if (gx < gw - 1) d[i] = Math.min(d[i], d[i + gw + 1] + b);
+        if (gx > 0) d[i] = Math.min(d[i], d[i + gw - 1] + b);
+      }
+    }
+    const dist = (x, y) => {
+      const gx = Math.round((x - x0) / step), gy = Math.round((y - y0) / step);
+      return gx < 0 || gy < 0 || gx >= gw || gy >= gh ? 1e9 : d[gx + gy * gw];
+    };
+    const free = (x, y) => { // pont (moitié haute) et tenons (côté extérieur, moitié haute) : pas de limite
+      const ax = Math.abs(x);
+      if (ax <= st.dbl / 2 + 4 && y >= -0.1 * H && y <= H / 2 + 10) return true;
+      return ax >= half - 0.3 * (half - st.dbl / 2) && ax <= half + 22 && y >= -0.15 * H && y <= H / 2 + 12;
+    };
+    const lower = (x, y) => y < -0.1 * H && !free(x, y); // bas des cercles : épaisseur régulière attendue
+    const test = (x, y, limit = [reach, reach]) => free(x, y) || dist(x, y) <= (lower(x, y) ? limit[x < 0 ? 0 : 1] : reach);
+    return { test, dist, lower, half };
   }
 
   // Proposition : contour de la silhouette, adouci (σ ≈ 0,3 mm, enlève l'escalier des pixels) et simplifié.
