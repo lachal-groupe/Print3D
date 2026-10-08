@@ -62,9 +62,12 @@ export function openPhotoEditor({ oma, dbl, outline, edit, onApply, onClear }) {
             </div>
             <p class="hint" data-hint></p>
             <div class="row2"><button data-act="propose">Proposition auto</button><button data-act="clearpoly">Effacer</button></div>
-            <label class="check"><input type="checkbox" data-k="smooth" checked> Adoucir les angles</label>
+            <div class="field"><label>Lissage des angles</label>
+              <div class="inputs"><input type="range" data-k="smooth" min="0" max="6" step="0.1" value="2"><output data-o="smooth">2,0 mm</output></div>
+              <p class="hint">Rayon d’arrondi. Les angles vifs (plus de 60°, ex. tenons) restent nets.</p></div>
             <div class="field"><label>Sensibilité de la proposition</label>
-              <div class="inputs"><input type="range" data-k="thr" min="10" max="120" step="1" value="45"><output data-o="thr">45</output></div></div>
+              <div class="inputs"><input type="range" data-k="thr" min="5" max="200" step="1" value="45"><output data-o="thr">auto</output></div>
+              <p class="hint">Réglée automatiquement pour chaque photo. Plus bas = plus de monture, plus haut = moins d’ombres.</p></div>
             <div class="row2"><button data-act="back">← Calage</button><button class="primary" data-act="apply">Utiliser</button></div>
           </div>
           ${outline ? '<button class="danger wide" data-act="clear">Revenir au dessin de l’atelier</button>' : ''}
@@ -81,15 +84,16 @@ export function openPhotoEditor({ oma, dbl, outline, edit, onApply, onClear }) {
   const st = {
     img: null, pix: null, iw: 0, ih: 0, bg: [255, 255, 255], thr: 45,
     ox: 0, oy: 0, s: 1, s0: 1, rot: 0, mirror: false, dbl: dbl ?? oma.dbl ?? 18, // px image = O + s·R(rot)·(x, −y)
-    step: 1, mode: 'edit', sym: true, smooth: true, ref: 'left', symPhoto: true,
+    step: 1, mode: 'edit', sym: true, smooth: 2, ref: 'left', symPhoto: true, // smooth : rayon de lissage (mm), 0 = aucun
     poly: [], // contour (mm) : demi-contour du côté gauche de l'image si symétrie, sinon contour complet
     drawing: false, drag: null, hover: null, view: { k: 1, x: 0, y: 0 },
   };
   // reprise d'un dessin : on retrouve les points de contrôle et la symétrie de la session précédente
   if (edit) {
-    Object.assign(st, { poly: edit.poly.map(q => [...q]), sym: edit.sym, ref: edit.ref, smooth: edit.smooth, symPhoto: edit.symPhoto ?? true });
+    // ancienne case « Adoucir les angles » (vrai / faux) : vrai = 2 mm
+    const smooth = typeof edit.smooth === 'number' ? edit.smooth : edit.smooth === false ? 0 : 2;
+    Object.assign(st, { poly: edit.poly.map(q => [...q]), sym: edit.sym, ref: edit.ref, smooth, symPhoto: edit.symPhoto ?? true });
     $('[data-k="sym"]').checked = st.sym;
-    $('[data-k="smooth"]').checked = st.smooth;
     $('[data-k="symphoto"]').checked = st.symPhoto;
     $('[data-symopts]').hidden = !st.sym;
     root.querySelectorAll('[data-ref]').forEach(b => b.classList.toggle('on', b.dataset.ref === st.ref));
@@ -170,16 +174,76 @@ export function openPhotoEditor({ oma, dbl, outline, edit, onApply, onClear }) {
       samples.push([st.pix[k], st.pix[k + 1], st.pix[k + 2]]);
     }
     st.bg = [0, 1, 2].map(ch => samples.map(s => s[ch]).sort((a, b) => a - b)[samples.length >> 1]);
+    buildContrast();
+  }
+
+  // Carte de contraste pour la proposition de contour, moyennée sur des blocs de k×k pixels (le grain de
+  // la photo disparaît) : écart au fond en luminosité et en teinte, la teinte comptant double pour qu'une
+  // ombre grise sur la feuille pèse moins qu'une monture. Seuil choisi automatiquement (méthode d'Otsu).
+  function buildContrast() {
+    const k = Math.max(1, Math.round(st.iw / 900));
+    const w = Math.floor(st.iw / k), h = Math.floor(st.ih / k);
+    const map = new Float32Array(w * h);
+    const lb = (st.bg[0] + st.bg[1] + st.bg[2]) / 3;
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      let r = 0, gr = 0, b = 0;
+      for (let j = 0; j < k; j++) for (let i = 0; i < k; i++) {
+        const q = ((y * k + j) * st.iw + x * k + i) * 4;
+        r += st.pix[q]; gr += st.pix[q + 1]; b += st.pix[q + 2];
+      }
+      r /= k * k; gr /= k * k; b /= k * k;
+      const l = (r + gr + b) / 3;
+      const dc = Math.hypot(r - l - (st.bg[0] - lb), gr - l - (st.bg[1] - lb), b - l - (st.bg[2] - lb));
+      map[x + y * w] = Math.hypot(l - lb, 2 * dc);
+    }
+    const hist = new Float64Array(256);
+    for (const v of map) hist[Math.min(255, v | 0)]++;
+    let sum = 0;
+    for (let i = 0; i < 256; i++) sum += i * hist[i];
+    let wB = 0, sB = 0, best = 0, thr = 45;
+    for (let t = 0; t < 256; t++) {
+      wB += hist[t];
+      if (!wB) continue;
+      const wF = map.length - wB;
+      if (!wF) break;
+      sB += t * hist[t];
+      const between = wB * wF * (sB / wB - (sum - sB) / wF) ** 2;
+      if (between > best) { best = between; thr = t; }
+    }
+    st.cmap = { k, w, h, map };
+    st.thr = Math.max(12, Math.min(200, thr));
+    st.thrAuto = true;
   }
 
   // Masque basse résolution : fond relié au bord de la photo (« extérieur », -2) et ouvertures (trous de fond).
-  function analyse() {
-    const k = Math.max(1, Math.round(st.iw / 480));
-    const w = Math.floor(st.iw / k), h = Math.floor(st.ih / k);
-    const bgAt = (x, y) => {
-      const i = ((y * k) * st.iw + x * k) * 4;
-      return Math.hypot(st.pix[i] - st.bg[0], st.pix[i + 1] - st.bg[1], st.pix[i + 2] - st.bg[2]) < st.thr;
-    };
+  // Le calage garde son réglage éprouvé (écart de couleur < 45 sur l'image réduite) ; la proposition de
+  // contour utilise la carte de contraste, plus fine, débarrassée de ses grains isolés.
+  function analyse(forOutline = false) {
+    let k, w, h, bgAt;
+    if (forOutline) {
+      ({ k, w, h } = st.cmap);
+      const raw = new Uint8Array(w * h);
+      for (let i = 0; i < raw.length; i++) raw[i] = st.cmap.map[i] < st.thr ? 1 : 0;
+      // filtre majoritaire 3×3 : supprime les points isolés et adoucit le bord en escalier
+      const clean = new Uint8Array(w * h);
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        let n = 0, t = 0;
+        for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) {
+          const xx = x + i, yy = y + j;
+          if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue;
+          n++; t += raw[xx + yy * w];
+        }
+        clean[x + y * w] = 2 * t > n ? 1 : 0;
+      }
+      bgAt = (x, y) => clean[x + y * w] === 1;
+    } else {
+      k = Math.max(1, Math.round(st.iw / 480));
+      w = Math.floor(st.iw / k); h = Math.floor(st.ih / k);
+      bgAt = (x, y) => {
+        const i = ((y * k) * st.iw + x * k) * 4;
+        return Math.hypot(st.pix[i] - st.bg[0], st.pix[i + 1] - st.bg[1], st.pix[i + 2] - st.bg[2]) < 45;
+      };
+    }
     const lab = new Int32Array(w * h).fill(-1);
     const flood = (sx, sy, id) => {
       const stack = [sx + sy * w], out = { n: 0, x0: w, x1: 0, y0: h, y1: 0, sx: 0 };
@@ -234,7 +298,7 @@ export function openPhotoEditor({ oma, dbl, outline, edit, onApply, onClear }) {
       const x = Math.round(ix), y = Math.round(iy);
       if (x < 0 || y < 0 || x >= st.iw || y >= st.ih) return true;
       const i = (y * st.iw + x) * 4;
-      return Math.hypot(st.pix[i] - st.bg[0], st.pix[i + 1] - st.bg[1], st.pix[i + 2] - st.bg[2]) < st.thr;
+      return Math.hypot(st.pix[i] - st.bg[0], st.pix[i + 1] - st.bg[1], st.pix[i + 2] - st.bg[2]) < 45;
     };
     const probes = lenses.map(l => {
       const pts = l.src.pts.filter((_, i) => i % 6 === 0);
@@ -284,13 +348,13 @@ export function openPhotoEditor({ oma, dbl, outline, edit, onApply, onClear }) {
 
   // Proposition : silhouette de la monture (tout ce qui n'est pas le fond extérieur), simplifiée.
   function propose() {
-    const { k, w, lab } = analyse();
-    const loops = maskContours((x, y) => (lab[x + y * w] === -2 ? 0 : 1), w, Math.floor(st.ih / k));
+    const { k, w, h, lab } = analyse(true);
+    const loops = maskContours((x, y) => (lab[x + y * w] === -2 ? 0 : 1), w, h);
     if (!loops.length) return;
     const outer = loops.reduce((a, b) => (b.length > a.length ? b : a));
-    let pts = simplify(outer.map(([x, y]) => imgToMm(x * k, y * k)), 0.7);
+    let pts = simplify(outer.map(([x, y]) => imgToMm((x + 0.5) * k, (y + 0.5) * k)), 0.35);
     // pas de points serrés : plus facile à retoucher
-    pts = pts.filter((q, i) => i === 0 || Math.hypot(q[0] - pts[i - 1][0], q[1] - pts[i - 1][1]) > 1.5);
+    pts = pts.filter((q, i) => i === 0 || Math.hypot(q[0] - pts[i - 1][0], q[1] - pts[i - 1][1]) > 1);
     if (area(pts) < 0) pts.reverse();
     if (flipRef()) pts = pts.map(([x, y]) => [-x, y]).reverse(); // modèle à droite : ramené côté x ≤ 0
     st.poly = st.sym ? halfOf(pts) : pts;
@@ -328,7 +392,7 @@ export function openPhotoEditor({ oma, dbl, outline, edit, onApply, onClear }) {
     }
     if (pts.length < 3) return [];
     if (area(pts) < 0) pts.reverse();
-    return st.smooth ? chaikin(pts, 2) : pts;
+    return st.smooth > 0 ? fillet(pts, st.smooth, 60) : pts;
   }
 
   // ---------- dessin ----------
@@ -499,6 +563,10 @@ export function openPhotoEditor({ oma, dbl, outline, edit, onApply, onClear }) {
     $('[data-o="rot"]').textContent = `${((st.rot * 180) / Math.PI).toFixed(1)}°`;
     $('[data-k="scale"]').value = Math.log(st.s / st.s0);
     $('[data-o="scale"]').textContent = st.iw ? `${st.s.toFixed(2)} px/mm` : '—';
+    $('[data-k="smooth"]').value = st.smooth;
+    $('[data-o="smooth"]').textContent = st.smooth > 0 ? `${st.smooth.toFixed(1).replace('.', ',')} mm` : 'aucun';
+    $('[data-k="thr"]').value = st.thr;
+    $('[data-o="thr"]').textContent = st.thrAuto ? `auto (${Math.round(st.thr)})` : `${Math.round(st.thr)}`;
     root.querySelectorAll('input[type=range]').forEach(el => {
       el.style.setProperty('--p', `${((el.value - el.min) / (el.max - el.min)) * 100}%`);
     });
@@ -509,12 +577,12 @@ export function openPhotoEditor({ oma, dbl, outline, edit, onApply, onClear }) {
     if (k === 'rot') st.rot = (+e.target.value * Math.PI) / 180;
     if (k === 'scale' && st.iw) st.s = st.s0 * Math.exp(+e.target.value);
     if (k === 'mirror') { st.mirror = e.target.checked; buildPixels(); autoCalibrate(); }
-    if (k === 'thr') { st.thr = +e.target.value; $('[data-o="thr"]').textContent = st.thr; propose(); }
-    if (k === 'smooth') st.smooth = e.target.checked;
+    if (k === 'thr') { st.thr = +e.target.value; st.thrAuto = false; propose(); }
+    if (k === 'smooth') st.smooth = +e.target.value;
     if (k === 'symphoto') st.symPhoto = e.target.checked;
     if (k === 'sym') {
       // passage symétrie ↔ libre : le contour en cours est converti
-      const was = st.smooth; st.smooth = false;
+      const was = st.smooth; st.smooth = 0;
       const full = st.poly.length >= 3 ? fullPolygon() : [];
       st.smooth = was;
       st.sym = e.target.checked;
@@ -611,16 +679,26 @@ function rdp(pts, a, b, tol) {
   }
   return dmax > tol ? [...rdp(pts, a, imax, tol).slice(0, -1), ...rdp(pts, imax, b, tol)] : [pts[a], pts[b]];
 }
-// Adoucissement de Chaikin (contour fermé) : chaque coin est remplacé par deux points à 1/4 et 3/4.
-function chaikin(pts, iters) {
-  let p = pts;
-  for (let k = 0; k < iters; k++) {
-    const q = [];
-    for (let i = 0; i < p.length; i++) {
-      const [x0, y0] = p[i], [x1, y1] = p[(i + 1) % p.length];
-      q.push([0.75 * x0 + 0.25 * x1, 0.75 * y0 + 0.25 * y1], [0.25 * x0 + 0.75 * x1, 0.25 * y0 + 0.75 * y1]);
+// Arrondi des angles (contour fermé) : chaque coin devient un arc de rayon r, sauf les angles vifs où la
+// direction tourne de plus de maxTurn degrés (tenons, pointes), gardés nets. L'arc est limité à 45 % des
+// segments voisins pour ne jamais empiéter sur le coin suivant.
+export function fillet(pts, r, maxTurn = 60) {
+  const n = pts.length, out = [];
+  for (let i = 0; i < n; i++) {
+    const a = pts[(i + n - 1) % n], p = pts[i], b = pts[(i + 1) % n];
+    const la = Math.hypot(p[0] - a[0], p[1] - a[1]), lb = Math.hypot(b[0] - p[0], b[1] - p[1]);
+    if (la < 1e-6 || lb < 1e-6) continue;
+    const u = [(p[0] - a[0]) / la, (p[1] - a[1]) / la], v = [(b[0] - p[0]) / lb, (b[1] - p[1]) / lb];
+    const turn = Math.acos(Math.max(-1, Math.min(1, u[0] * v[0] + u[1] * v[1])));
+    if (turn < 0.02 || turn > (maxTurn * Math.PI) / 180) { out.push(p); continue; }
+    const t = Math.min(r * Math.tan(turn / 2), 0.45 * la, 0.45 * lb);
+    const p1 = [p[0] - u[0] * t, p[1] - u[1] * t], p2 = [p[0] + v[0] * t, p[1] + v[1] * t];
+    // arc approché par une Bézier quadratique p1 → p → p2, tangente aux deux segments
+    const m = Math.max(2, Math.ceil(turn / 0.12));
+    for (let j = 0; j <= m; j++) {
+      const s = j / m, c0 = (1 - s) ** 2, c1 = 2 * s * (1 - s), c2 = s * s;
+      out.push([c0 * p1[0] + c1 * p[0] + c2 * p2[0], c0 * p1[1] + c1 * p[1] + c2 * p2[1]]);
     }
-    p = q;
   }
-  return p;
+  return out;
 }

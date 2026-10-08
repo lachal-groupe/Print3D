@@ -7,7 +7,7 @@
  "bottom_shell_layers": "5",
  "bottom_color_penetration_layers": "5",
  "bottom_shell_thickness": "0",
- "bottom_surface_pattern": "monotonic",
+ "bottom_surface_pattern": "monotonicline",
  "bridge_flow": "1",
  "bridge_no_support": "0",
  "bridge_speed": [
@@ -40,14 +40,17 @@
  "infill_combination": "0",
  "infill_direction": "45",
  "infill_wall_overlap": "15%",
- "initial_layer_line_width": "0.5",
+ "initial_layer_line_width": "0.42",
  "initial_layer_print_height": "0.2",
  "initial_layer_speed": [
-  "50",
-  "50"
+  "30",
+  "30"
  ],
  "inner_wall_line_width": "0.45",
- "inner_wall_speed": "200",
+ "inner_wall_speed": [
+  "200",
+  "200"
+ ],
  "interface_shells": "0",
  "internal_bridge_support_thickness": "0.8",
  "internal_solid_infill_line_width": "0.42",
@@ -78,7 +81,10 @@
  "minimum_sparse_infill_area": "15",
  "only_one_wall_top": "1",
  "outer_wall_line_width": "0.42",
- "outer_wall_speed": "120",
+ "outer_wall_speed": [
+  "120",
+  "120"
+ ],
  "overhang_totally_speed": [
   "10",
   "10"
@@ -109,7 +115,7 @@
  "skirt_height": "1",
  "skirt_loops": "0",
  "smooth_coefficient": "80",
- "sparse_infill_density": "35%",
+ "sparse_infill_density": "15%",
  "skeleton_infill_density": "15%",
  "skin_infill_density": "15%",
  "sparse_infill_line_width": "0.45",
@@ -195,8 +201,8 @@
   "500"
  ],
  "initial_layer_infill_speed": [
-  "105",
-  "105"
+  "40",
+  "40"
  ],
  "inner_wall_acceleration": [
   "0",
@@ -284,5 +290,6 @@
   "Bambu Lab P1S 0.4 nozzle"
  ],
  "brim_type": "no_brim",
+ "solid_infill_direction": "0",
  "curr_bed_type": "Textured PEI Plate"
 }

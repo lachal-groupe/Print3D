@@ -46,7 +46,7 @@ const ouiNon = [['non', 'Non'], ['oui', 'Oui']];
 
 const GROUPS = [
   { title: 'Verre et drageoir', sub: 'Serrage et forme du biseau', icon: 'lens', c: 'var(--lime)', fields: [
-    r('clearance', 'Jeu au fond du drageoir', -0.3, 0.4, 0.05, 'mm', '+ = verre plus libre, − = plus serré'),
+    r('clearance', 'Jeu au fond du drageoir', -0.3, 1, 0.05, 'mm', 'Par côté : 0,45 = cerclage agrandi de 0,8 mm en diamètre. + = verre plus libre'),
     r('grooveDepth', 'Profondeur du drageoir', 0.4, 1.5, 0.05),
     r('bevelAngle', 'Angle du biseau', 90, 130, 1, '°'),
   ] },
@@ -107,9 +107,9 @@ const GROUPS = [
     r('barW', 'H · Tige : épaisseur', 0.5, 4, 0.05, 'mm', 'Vue 1, traversée par la vis courte'),
     r('barHolePos', 'I · Tige : collerette → trou', 3, 13, 0.05),
     r('slotClear', 'Jeu des logements', 0, 0.5, 0.05),
-    r('tenonScrewD', 'Vis longue : avant-trou', 0.5, 1.2, 0.05, 'mm', 'Vis Ø 1 mm dans le tenon, trou borgne'),
+    r('tenonScrewD', 'Vis longue : trou', 0.6, 1.6, 0.05, 'mm', 'Vis Ø 1 mm dans le tenon, trou borgne'),
     r('tenonScrewLen', 'Vis longue : longueur', 3, 9, 0.1),
-    r('templeScrewD', 'Vis courte : avant-trou', 0.5, 1.2, 0.05, 'mm', 'Vis Ø 1 mm par l’intérieur de la branche, trou borgne'),
+    r('templeScrewD', 'Vis courte : trou', 0.6, 1.6, 0.05, 'mm', 'Vis Ø 1 mm par l’intérieur de la branche, trou borgne'),
     r('templeScrewLen', 'Vis courte : longueur', 1.5, 5, 0.1),
   ] },
   { title: 'Branches', sub: 'Taille, forme, gravure', icon: 'temple', c: 'var(--blue)', fields: [

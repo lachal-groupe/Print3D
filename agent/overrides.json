@@ -22,10 +22,28 @@
           "220"
         ],
         "textured_plate_temp": [
-          "55"
+          "65"
         ],
         "textured_plate_temp_initial_layer": [
-          "55"
+          "65"
+        ],
+        "hot_plate_temp": [
+          "65"
+        ],
+        "hot_plate_temp_initial_layer": [
+          "65"
+        ],
+        "cool_plate_temp": [
+          "65"
+        ],
+        "cool_plate_temp_initial_layer": [
+          "65"
+        ],
+        "eng_plate_temp": [
+          "65"
+        ],
+        "eng_plate_temp_initial_layer": [
+          "65"
         ]
       }
     },
@@ -47,11 +65,29 @@
         "nozzle_temperature_initial_layer": [
           "220"
         ],
+        "textured_plate_temp": [
+          "65"
+        ],
+        "textured_plate_temp_initial_layer": [
+          "65"
+        ],
         "hot_plate_temp": [
-          "55"
+          "65"
         ],
         "hot_plate_temp_initial_layer": [
-          "55"
+          "65"
+        ],
+        "cool_plate_temp": [
+          "65"
+        ],
+        "cool_plate_temp_initial_layer": [
+          "65"
+        ],
+        "eng_plate_temp": [
+          "65"
+        ],
+        "eng_plate_temp_initial_layer": [
+          "65"
         ]
       }
     }
@@ -62,7 +98,7 @@
     "wall_loops": "4",
     "top_shell_layers": "7",
     "bottom_shell_layers": "5",
-    "sparse_infill_density": "35%",
+    "sparse_infill_density": "15%",
     "sparse_infill_pattern": "gyroid",
     "enable_support": "0",
     "brim_type": "no_brim",
@@ -70,7 +106,12 @@
     "outer_wall_speed": "120",
     "inner_wall_speed": "200",
     "print_sequence": "by layer",
-    "wall_generator": "arachne"
+    "wall_generator": "arachne",
+    "initial_layer_line_width": "0.42",
+    "initial_layer_speed": "30",
+    "initial_layer_infill_speed": "40",
+    "bottom_surface_pattern": "monotonicline",
+    "solid_infill_direction": "0"
   },
   "qualities": {
     "fine": {
@@ -84,9 +125,9 @@
         "wall_loops": "3",
         "top_shell_layers": "5",
         "bottom_shell_layers": "4",
-        "sparse_infill_density": "25%",
         "outer_wall_speed": "150"
       }
     }
-  }
+  },
+  "_comment_premiere_couche": "Première couche (devant de la face) : 0,42 mm, 30-40 mm/s, lignes parallèles à l'axe des tenons (X)."
 }

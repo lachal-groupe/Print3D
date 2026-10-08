@@ -22,10 +22,10 @@
   "70"
  ],
  "cool_plate_temp": [
-  "35"
+  "65"
  ],
  "cool_plate_temp_initial_layer": [
-  "35"
+  "65"
  ],
  "counter_coef_1": [
   "0"
@@ -52,10 +52,10 @@
   "50"
  ],
  "eng_plate_temp": [
-  "0"
+  "65"
  ],
  "eng_plate_temp_initial_layer": [
-  "0"
+  "65"
  ],
  "fan_cooling_layer_time": [
   "80"
@@ -300,10 +300,10 @@
   "45"
  ],
  "textured_plate_temp": [
-  "55"
+  "65"
  ],
  "textured_plate_temp_initial_layer": [
-  "55"
+  "65"
  ],
  "filament_velocity_adaptation_factor": [
   "1"

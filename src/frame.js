@@ -6,7 +6,7 @@ import { ShapeUtils, Vector2 } from 'three';
 
 export const DEFAULTS = {
   // Verre / drageoir
-  clearance: 0.05,     // jeu radial au fond du drageoir (+ = plus lâche)
+  clearance: 0.45,     // jeu radial au fond du drageoir (+ = plus lâche) : 0,45 = cerclage agrandi de 0,8 mm en diamètre (essai réel : verre impossible à clipser à 0,05)
   grooveDepth: 0.9,    // profondeur du drageoir (hauteur du biseau)
   bevelAngle: 110,     // angle d'ouverture du V
   bevelPos: 0.4,       // position du sommet du biseau, en fraction de l'épaisseur depuis l'avant
@@ -60,9 +60,9 @@ export const DEFAULTS = {
   barHolePos: 8.1,     // I  trou de vis, distance depuis la collerette
   slotClear: 0.15,     // jeu des logements (impression)
   // Vis Ø 1 mm en trou borgne : la longue dans le tenon, la courte par l'intérieur de la branche
-  tenonScrewD: 0.8,    // avant-trou de la vis longue (PLA taraudé par la vis)
+  tenonScrewD: 1.0,    // trou de la vis longue : imprimé ≈ 0,85, la vis Ø 1 taraude le PLA (0,8 se bouchait à l'impression)
   tenonScrewLen: 6.0,  // longueur de la vis longue
-  templeScrewD: 0.8,   // avant-trou de la vis courte
+  templeScrewD: 1.0,   // trou de la vis courte, même diamètre que le tenon
   templeScrewLen: 2.6, // longueur de la vis courte
   minSkin: 0.6,        // matière minimale laissée au fond d'un trou borgne
   hingeGap: 7.0,       // E  longueur visible de la charnière entre les collerettes
@@ -725,7 +725,7 @@ export function buildTemples(wasm, p, warnings = []) {
   }
   if (p.sizeMark === 'oui' && p.sizePolys?.length) {
     const uc = p.barLen + 6;
-    marks.push({ polys: p.sizePolys, u: uc, v: 0, h: Math.max(1.5, height(uc) - 2.4) });
+    marks.push({ polys: p.sizePolys, u: uc, v: 0, h: Math.max(1, (height(uc) - 2.4) / 2) }); // moitié de la hauteur disponible
   }
   for (const m of marks) {
     const cs0 = g(new CrossSection(m.polys, 'EvenOdd'));

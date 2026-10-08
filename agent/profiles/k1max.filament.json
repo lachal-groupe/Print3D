@@ -4,28 +4,28 @@
  "from": "User",
  "instantiation": "true",
  "cool_plate_temp": [
-  "55"
+  "65"
  ],
  "eng_plate_temp": [
-  "55"
+  "65"
  ],
  "hot_plate_temp": [
-  "55"
+  "65"
  ],
  "textured_plate_temp": [
-  "55"
+  "65"
  ],
  "cool_plate_temp_initial_layer": [
-  "55"
+  "65"
  ],
  "eng_plate_temp_initial_layer": [
-  "55"
+  "65"
  ],
  "hot_plate_temp_initial_layer": [
-  "55"
+  "65"
  ],
  "textured_plate_temp_initial_layer": [
-  "55"
+  "65"
  ],
  "overhang_fan_threshold": [
   "50%"

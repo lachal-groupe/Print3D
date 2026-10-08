@@ -21,7 +21,7 @@ import time
 import traceback
 import urllib.request
 
-VERSION = '1.0.0'
+VERSION = '1.1.0'
 PORT = 47913
 # ATELIER_APP_DIR : dossier de travail de remplacement, pour les essais sans toucher à l'installation
 APP_DIR = os.environ.get('ATELIER_APP_DIR') or os.path.join(os.environ.get('LOCALAPPDATA', os.path.expanduser('~')), 'AtelierMonture')
@@ -29,6 +29,9 @@ NO_WINDOW = 0x08000000 if os.name == 'nt' else 0  # CREATE_NO_WINDOW
 
 # Sites autorisés à utiliser l'agent : le site de l'atelier (lachal-groupe.github.io) et la version locale.
 # La liste peut être restreinte dans %LOCALAPPDATA%\AtelierMonture\config.json (« allowed_origins »).
+# Site de l'atelier : l'agent y reprend les derniers réglages d'impression (config.json : « site »).
+DEFAULT_SITE = 'https://lachal-groupe.github.io/Print3D'
+PROFILE_REFRESH = 6 * 3600  # secondes entre deux mises à jour des réglages
 DEFAULT_ORIGINS = [r'^https://lachal-groupe\.github\.io$', r'^http://(localhost|127\.0\.0\.1)(:\d+)?$']
 
 
@@ -64,6 +67,51 @@ def machines():
             return json.load(fh)
     except (OSError, ValueError):
         return {}
+
+
+def update_profiles():
+    """Télécharge les réglages d'impression publiés sur le site ; garde ceux du PC si le site est injoignable."""
+    base = (config().get('site') or DEFAULT_SITE).rstrip('/') + '/agent/profiles/'
+    prof = os.path.join(APP_DIR, 'profiles')
+
+    def fetch(name):
+        with urllib.request.urlopen(base + name, timeout=20) as r:
+            data = r.read()
+        json.loads(data)  # refuse un fichier abîmé
+        return data
+
+    try:
+        index = fetch('machines.json')
+        files = {'machines.json': index}
+        for mid, m in json.loads(index).items():
+            for kind in ['machine', 'process', 'filament'] + [f'process.{q}' for q in m.get('qualities', {})]:
+                files[f'{mid}.{kind}.json'] = fetch(f'{mid}.{kind}.json')
+    except Exception as e:  # hors ligne, site en travaux… : on garde les réglages actuels
+        log(f'réglages non mis à jour ({e})')
+        return False
+    os.makedirs(prof, exist_ok=True)
+    changed = 0
+    for name, data in files.items():
+        path = os.path.join(prof, name)
+        try:
+            with open(path, 'rb') as fh:
+                if fh.read() == data:
+                    continue
+        except OSError:
+            pass
+        with open(path + '.tmp', 'wb') as fh:
+            fh.write(data)
+        os.replace(path + '.tmp', path)
+        changed += 1
+    if changed:
+        log(f"réglages d’impression mis à jour depuis le site ({changed} fichiers)")
+    return True
+
+
+def profile_updater():
+    while True:
+        update_profiles()
+        time.sleep(PROFILE_REFRESH)
 
 
 # ---------------------------------------------------------------- découpe
@@ -198,6 +246,7 @@ def run_agent():
     if agent_running():
         return
     log(f'démarrage de l’agent {VERSION}')
+    threading.Thread(target=profile_updater, daemon=True).start()
     srv = http.server.ThreadingHTTPServer(('127.0.0.1', PORT), Handler)
     srv.serve_forever()
 

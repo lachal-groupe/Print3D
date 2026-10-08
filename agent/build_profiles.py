@@ -56,7 +56,11 @@ def finalize(preset, name, kind, overrides, system_name, machine_system=None):
     toutes présentes, et le procédé et le filament sont déclarés compatibles avec cette machine système.
     """
     preset = dict(preset)
-    preset.update(overrides)
+    for k, v in overrides.items():
+        # réglage par extrudeur / par plateau (liste) : la valeur simple est recopiée pour chaque élément
+        if isinstance(preset.get(k), list) and not isinstance(v, list):
+            v = [v] * len(preset[k])
+        preset[k] = v
     preset['name'] = name
     preset['type'] = kind
     preset['from'] = 'User'
