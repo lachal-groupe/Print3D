@@ -107,9 +107,9 @@ const GROUPS = [
     r('barW', 'H · Tige : épaisseur', 0.5, 4, 0.05, 'mm', 'Vue 1, traversée par la vis courte'),
     r('barHolePos', 'I · Tige : collerette → trou', 3, 13, 0.05),
     r('slotClear', 'Jeu des logements', 0, 0.5, 0.05),
-    r('tenonScrewD', 'Vis longue : trou', 0.6, 1.6, 0.05, 'mm', 'Vis Ø 1 mm dans le tenon, trou borgne'),
+    r('tenonScrewD', 'Vis longue : trou', 0.6, 1.6, 0.05, 'mm', 'Vis Ø 1 mm : passe librement, se visse dans l’insert fileté'),
     r('tenonScrewLen', 'Vis longue : longueur', 3, 9, 0.1),
-    r('templeScrewD', 'Vis courte : trou', 0.6, 1.6, 0.05, 'mm', 'Vis Ø 1 mm par l’intérieur de la branche, trou borgne'),
+    r('templeScrewD', 'Vis courte : trou', 0.6, 1.6, 0.05, 'mm', 'Vis Ø 1 mm par l’intérieur de la branche : passe librement jusqu’à l’insert'),
     r('templeScrewLen', 'Vis courte : longueur', 1.5, 5, 0.1),
   ] },
   { title: 'Branches', sub: 'Taille, forme, gravure', icon: 'temple', c: 'var(--blue)', fields: [

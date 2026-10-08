@@ -451,7 +451,15 @@ export function openPhotoEditor({ oma, dbl, outline, edit, onApply, onClear }) {
       }
       // polygone de contrôle (côté modifiable)
       line(st.poly.map(D), st.drawing ? '#fef08a' : 'rgba(163,230,53,.55)', 1.5, !st.sym && !st.drawing, [4, 4]);
-      if (st.drawing && st.hover && st.poly.length) line([D(st.poly[st.poly.length - 1]), D(st.hover)], '#fef08a', 1.5, false, [4, 4]);
+      if (st.drawing && st.hover && st.poly.length) {
+        const end = closingPoint(st.hover);
+        line([D(st.poly[st.poly.length - 1]), D(end || st.hover)], end ? '#a3e635' : '#fef08a', end ? 2.5 : 1.5, false, end ? [] : [4, 4]);
+        if (end) {
+          const [sx, sy] = mmToScreen(D(end));
+          ctx.beginPath(); ctx.arc(sx, sy, 9, 0, 2 * Math.PI);
+          ctx.strokeStyle = '#a3e635'; ctx.lineWidth = 2.5; ctx.stroke();
+        }
+      }
       st.poly.forEach((q, i) => {
         const [sx, sy] = mmToScreen(D(q));
         ctx.beginPath(); ctx.arc(sx, sy, i === 0 && st.drawing ? 7 : 5, 0, 2 * Math.PI);
@@ -480,8 +488,25 @@ export function openPhotoEditor({ oma, dbl, outline, edit, onApply, onClear }) {
   };
   const finishDrawing = () => {
     st.drawing = false;
+    st.hover = null;
     if (st.sym && st.poly.length >= 2) { st.poly[0][0] = 0; st.poly[st.poly.length - 1][0] = 0; }
     setMode('edit');
+    $('[data-hint]').innerHTML = HINTS.done;
+  };
+  // Point qui fermerait la forme si l'on cliquait en q (mm), sinon null : en symétrie, retour sur l'axe
+  // (deuxième passage sur la ligne médiane) ; sans symétrie, retour sur le premier point.
+  const SNAP = 14; // px
+  const closingPoint = q => {
+    if (!st.drawing) return null;
+    const [sx, sy] = mmToScreen(D(q));
+    if (st.sym) {
+      if (st.poly.length < 2) return null;
+      const a = mmToScreen([0, q[1]]);
+      return Math.hypot(a[0] - sx, a[1] - sy) < SNAP ? [0, q[1]] : null;
+    }
+    if (st.poly.length < 3) return null;
+    const f = mmToScreen(D(st.poly[0]));
+    return Math.hypot(f[0] - sx, f[1] - sy) < SNAP ? st.poly[0] : null;
   };
 
   canvas.addEventListener('contextmenu', e => e.preventDefault());
@@ -497,8 +522,12 @@ export function openPhotoEditor({ oma, dbl, outline, edit, onApply, onClear }) {
       if (e.button !== 0) return;
       const p = inputMm(sx, sy);
       if (!st.drawing) { if (st.sym) p[0] = 0; st.poly = [p]; st.drawing = true; } // le demi-contour part de l'axe
-      else if (!st.sym && st.poly.length >= 3 && nearestVertex(sx, sy, 12) === 0) finishDrawing();
-      else st.poly.push(p);
+      else {
+        const end = closingPoint(p);
+        if (end && st.sym) { st.poly.push(end); finishDrawing(); } // retour sur l'axe : demi-forme fermée
+        else if (end) finishDrawing(); // retour sur le premier point
+        else st.poly.push(p);
+      }
       draw();
       return;
     }
@@ -547,8 +576,9 @@ export function openPhotoEditor({ oma, dbl, outline, edit, onApply, onClear }) {
   // ---------- panneau ----------
   const HINTS = {
     edit: '<b>Glisser</b> un point pour le déplacer, <b>double-clic</b> sur un trait pour ajouter un point, <b>clic droit</b> sur un point pour le supprimer.',
-    draw: 'Cliquez pour poser les points tout autour de la face (nez et tenons compris), puis <b>double-clic</b> ou clic sur le premier point pour fermer.',
-    drawSym: 'Partez du <b>haut du pont, sur l’axe</b>, faites le tour du côté modèle, puis <b>double-cliquez</b> en bas : l’autre côté suit en miroir.',
+    draw: 'Cliquez pour poser les points tout autour de la face (nez et tenons compris). <b>Revenez sur le premier point</b> pour fermer : le trait passe au <b style="color:#a3e635">vert</b>.',
+    drawSym: 'Partez du <b>haut du pont, sur l’axe</b>, faites le tour du côté modèle et <b>revenez sur l’axe</b> en bas : le trait passe au <b style="color:#a3e635">vert</b> et la forme se ferme, l’autre côté suit en miroir.',
+    done: '<b style="color:#a3e635">✓ Forme fermée.</b> Vous pouvez encore <b>glisser</b> les points, <b>double-cliquer</b> sur un trait pour en ajouter, <b>clic droit</b> pour en supprimer.',
   };
   function setMode(m) {
     st.mode = m;

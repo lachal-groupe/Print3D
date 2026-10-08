@@ -60,9 +60,9 @@ export const DEFAULTS = {
   barHolePos: 8.1,     // I  trou de vis, distance depuis la collerette
   slotClear: 0.15,     // jeu des logements (impression)
   // Vis Ø 1 mm en trou borgne : la longue dans le tenon, la courte par l'intérieur de la branche
-  tenonScrewD: 1.0,    // trou de la vis longue : imprimé ≈ 0,85, la vis Ø 1 taraude le PLA (0,8 se bouchait à l'impression)
+  tenonScrewD: 1.3,    // trou de passage de la vis longue (Ø 1) : imprimé ≈ 1,15, la vis passe librement et se visse dans l'insert fileté
   tenonScrewLen: 6.0,  // longueur de la vis longue
-  templeScrewD: 1.0,   // trou de la vis courte, même diamètre que le tenon
+  templeScrewD: 1.3,   // trou de passage de la vis courte, même diamètre que le tenon
   templeScrewLen: 2.6, // longueur de la vis courte
   minSkin: 0.6,        // matière minimale laissée au fond d'un trou borgne
   hingeGap: 7.0,       // E  longueur visible de la charnière entre les collerettes
