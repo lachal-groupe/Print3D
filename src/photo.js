@@ -174,7 +174,55 @@ export function openPhotoEditor({ oma, dbl, outline, edit, onApply, onClear }) {
       samples.push([st.pix[k], st.pix[k + 1], st.pix[k + 2]]);
     }
     st.bg = [0, 1, 2].map(ch => samples.map(s => s[ch]).sort((a, b) => a - b)[samples.length >> 1]);
+    flattenLight();
     buildContrast();
+  }
+
+  // Éclairage inégal (feuille plus claire au centre qu'aux bords) : on estime la couleur locale de la feuille
+  // sur une image réduite (maximum glissant sur ±15 % de la largeur, plus large que la monture, pour un
+  // fond clair ; minimum pour un fond sombre), lissée, puis chaque pixel est ramené au niveau du bord
+  // (correction bornée à ±35 % : une grande zone sombre n'est jamais prise pour de la feuille).
+  function flattenLight() {
+    const ks = Math.max(1, Math.round(st.iw / 250));
+    const w = Math.floor(st.iw / ks), h = Math.floor(st.ih / ks);
+    const light = (st.bg[0] + st.bg[1] + st.bg[2]) / 3 >= 100;
+    const R = Math.round(w * 0.15);
+    const field = [0, 1, 2].map(ch => {
+      let f = new Float32Array(w * h);
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        let v = 0;
+        for (let j = 0; j < ks; j++) for (let i = 0; i < ks; i++) v += st.pix[((y * ks + j) * st.iw + x * ks + i) * 4 + ch];
+        f[x + y * w] = v / (ks * ks);
+      }
+      f = slide(f, w, h, R, light ? Math.max : Math.min);
+      return slide(f, w, h, R, null); // moyenne glissante : champ lisse
+    });
+    // niveau du champ sur le bord de la photo (là où st.bg a été mesuré) : la correction est relative à ce
+    // niveau, ce qui annule le biais du maximum (un peu plus clair que la feuille moyenne)
+    const edge = field.map(f => {
+      const v = [];
+      for (let x = 0; x < w; x++) v.push(f[x], f[x + (h - 1) * w]);
+      for (let y = 0; y < h; y++) v.push(f[y * w], f[y * w + w - 1]);
+      return v.sort((a, b) => a - b)[v.length >> 1];
+    });
+    const at = (f, fx, fy) => { // interpolation bilinéaire
+      const x0 = Math.max(0, Math.min(w - 2, Math.floor(fx))), y0 = Math.max(0, Math.min(h - 2, Math.floor(fy)));
+      const tx = Math.max(0, Math.min(1, fx - x0)), ty = Math.max(0, Math.min(1, fy - y0));
+      const a = f[x0 + y0 * w], b = f[x0 + 1 + y0 * w], c = f[x0 + (y0 + 1) * w], d = f[x0 + 1 + (y0 + 1) * w];
+      return (a * (1 - tx) + b * tx) * (1 - ty) + (c * (1 - tx) + d * tx) * ty;
+    };
+    const pix = new Uint8ClampedArray(st.pix);
+    for (let y = 0; y < st.ih; y++) {
+      const fy = (y + 0.5) / ks - 0.5;
+      for (let x = 0; x < st.iw; x++) {
+        const fx = (x + 0.5) / ks - 0.5, q = (y * st.iw + x) * 4;
+        for (let ch = 0; ch < 3; ch++) {
+          const g = Math.min(1.35, Math.max(0.74, edge[ch] / Math.max(8, at(field[ch], fx, fy))));
+          pix[q + ch] = st.pix[q + ch] * g;
+        }
+      }
+    }
+    st.pix = pix;
   }
 
   // Carte de contraste pour la proposition de contour, moyennée sur des blocs de k×k pixels (le grain de
@@ -215,42 +263,22 @@ export function openPhotoEditor({ oma, dbl, outline, edit, onApply, onClear }) {
     st.thrAuto = true;
   }
 
-  // Masque basse résolution : fond relié au bord de la photo (« extérieur », -2) et ouvertures (trous de fond).
-  // Le calage garde son réglage éprouvé (écart de couleur < 45 sur l'image réduite) ; la proposition de
-  // contour utilise la carte de contraste, plus fine, débarrassée de ses grains isolés.
-  function analyse(forOutline = false) {
-    let k, w, h, bgAt;
-    if (forOutline) {
-      ({ k, w, h } = st.cmap);
-      const raw = new Uint8Array(w * h);
-      for (let i = 0; i < raw.length; i++) raw[i] = st.cmap.map[i] < st.thr ? 1 : 0;
-      // filtre majoritaire 3×3 : supprime les points isolés et adoucit le bord en escalier
-      const clean = new Uint8Array(w * h);
-      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-        let n = 0, t = 0;
-        for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) {
-          const xx = x + i, yy = y + j;
-          if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue;
-          n++; t += raw[xx + yy * w];
-        }
-        clean[x + y * w] = 2 * t > n ? 1 : 0;
-      }
-      bgAt = (x, y) => clean[x + y * w] === 1;
-    } else {
-      k = Math.max(1, Math.round(st.iw / 480));
-      w = Math.floor(st.iw / k); h = Math.floor(st.ih / k);
-      bgAt = (x, y) => {
-        const i = ((y * k) * st.iw + x * k) * 4;
-        return Math.hypot(st.pix[i] - st.bg[0], st.pix[i + 1] - st.bg[1], st.pix[i + 2] - st.bg[2]) < 45;
-      };
-    }
+  // Masque basse résolution pour le calage : fond relié au bord de la photo (« extérieur », -2) et
+  // ouvertures (trous de fond). Réglage éprouvé : écart de couleur < 45 sur l'image réduite.
+  function analyse() {
+    const k = Math.max(1, Math.round(st.iw / 480));
+    const w = Math.floor(st.iw / k), h = Math.floor(st.ih / k);
+    const bgAt = (x, y) => {
+      const i = ((y * k) * st.iw + x * k) * 4;
+      return Math.hypot(st.pix[i] - st.bg[0], st.pix[i + 1] - st.bg[1], st.pix[i + 2] - st.bg[2]) < 45;
+    };
     const lab = new Int32Array(w * h).fill(-1);
     const flood = (sx, sy, id) => {
-      const stack = [sx + sy * w], out = { n: 0, x0: w, x1: 0, y0: h, y1: 0, sx: 0 };
+      const stack = [sx + sy * w], out = { n: 0, x0: w, x1: 0, y0: h, y1: 0, sx: 0, sy: 0 };
       lab[stack[0]] = id;
       while (stack.length) {
         const q = stack.pop(), x = q % w, y = (q / w) | 0;
-        out.n++; out.sx += x;
+        out.n++; out.sx += x; out.sy += y;
         if (x < out.x0) out.x0 = x; if (x > out.x1) out.x1 = x; if (y < out.y0) out.y0 = y; if (y > out.y1) out.y1 = y;
         for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
           const nx = x + dx, ny = y + dy;
@@ -270,20 +298,53 @@ export function openPhotoEditor({ oma, dbl, outline, edit, onApply, onClear }) {
     return { k, w, h, lab, holes };
   }
 
+  // Les deux ouvertures des verres parmi les zones de fond enfermées (une feuille déchirée, une branche
+  // ou un reflet peuvent en créer d'autres) : formes pleines aux proportions du verre OMA, de tailles
+  // voisines, côte à côte. Les morceaux d'une ouverture coupée par un trait (reflet, déchirure) y sont
+  // rattachés. Renvoie [ouvertures côté gauche de l'image, côté droit], ou null (verres morcelés, par
+  // exemple par les branches repliées : on garde alors le partage gauche / droite au plus grand écart).
+  function lensPair(holes) {
+    const want = (lenses[0].src.width + lenses[1].src.width) / (lenses[0].src.height + lenses[1].src.height);
+    const dims = c => ({ w: c.x1 - c.x0 + 1, h: c.y1 - c.y0 + 1, cx: c.sx / c.n, cy: c.sy / c.n });
+    const big = Math.max(...holes.map(c => c.n));
+    const ok = holes.filter(c => { // verre vu en entier : forme pleine, proportions du verre, parmi les plus grandes
+      const d = dims(c), a = d.w / d.h / want;
+      return c.n > 0.35 * big && c.n / (d.w * d.h) > 0.5 && a > 0.65 && a < 1.5;
+    });
+    let best = null;
+    for (let i = 0; i < ok.length; i++) for (let j = i + 1; j < ok.length; j++) {
+      const a = dims(ok[i]), b = dims(ok[j]);
+      const size = Math.min(ok[i].n, ok[j].n) / Math.max(ok[i].n, ok[j].n);
+      if (size < 0.4 || Math.abs(a.cy - b.cy) > 0.5 * (a.h + b.h) / 2 || Math.abs(a.cx - b.cx) < 0.8 * (a.w + b.w) / 2) continue;
+      const score = size * Math.sqrt(ok[i].n + ok[j].n); // ressemblance × taille
+      if (!best || score > best.score) best = { score, pair: a.cx < b.cx ? [ok[i], ok[j]] : [ok[j], ok[i]] };
+    }
+    if (!best) return null;
+    return best.pair.map(main => {
+      const m = dims(main), mx = 0.1 * m.w, my = 0.1 * m.h;
+      return holes.filter(c => c === main || (!best.pair.includes(c)
+        && c.sx / c.n > main.x0 - mx && c.sx / c.n < main.x1 + mx && c.sy / c.n > main.y0 - my && c.sy / c.n < main.y1 + my));
+    });
+  }
+
   // Calage automatique : les deux groupes d'ouvertures (gauche / droite de l'image) donnent
   // l'échelle (taille des verres), la rotation, la position et l'écart entre verres.
   function autoCalibrate() {
     const { k, holes } = analyse();
     if (holes.length < 2) return false;
     holes.sort((a, b) => a.sx / a.n - b.sx / b.n);
-    let cut = 1, gapMax = -1;
-    for (let i = 1; i < holes.length; i++) {
-      const gap = holes[i].sx / holes[i].n - holes[i - 1].sx / holes[i - 1].n;
-      if (gap > gapMax) { gapMax = gap; cut = i; }
-    }
     const box = grp => grp.reduce((b, c) => ({ x0: Math.min(b.x0, c.x0), x1: Math.max(b.x1, c.x1), y0: Math.min(b.y0, c.y0), y1: Math.max(b.y1, c.y1) }),
       { x0: Infinity, x1: -Infinity, y0: Infinity, y1: -Infinity });
-    const [bR, bL] = [box(holes.slice(0, cut)), box(holes.slice(cut))].map(b => ({
+    let groups = lensPair(holes);
+    if (!groups) { // repli : coupure au plus grand écart horizontal entre ouvertures
+      let cut = 1, gapMax = -1;
+      for (let i = 1; i < holes.length; i++) {
+        const gap = holes[i].sx / holes[i].n - holes[i - 1].sx / holes[i - 1].n;
+        if (gap > gapMax) { gapMax = gap; cut = i; }
+      }
+      groups = [holes.slice(0, cut), holes.slice(cut)];
+    }
+    const [bR, bL] = groups.map(box).map(b => ({
       cx: ((b.x0 + b.x1) / 2) * k, cy: ((b.y0 + b.y1) / 2) * k, w: (b.x1 - b.x0) * k, h: (b.y1 - b.y0) * k }));
     // l'ouverture visible est le verre moins ~1,2 mm par côté (drageoir + tranche du verre)
     const sBox = [[bR, lenses[0]], [bL, lenses[1]]].flatMap(([b, l]) => [b.w / (l.src.width - 2.4), b.h / (l.src.height - 2.4)]);
@@ -317,23 +378,30 @@ export function openPhotoEditor({ oma, dbl, outline, edit, onApply, onClear }) {
       }
       return n;
     };
-    let best = null;
     const s0 = st.s;
-    for (let f = 0.8; f <= 1.12; f += 0.01) {
-      const s = s0 * f;
-      const fits = [bR, bL].map((b, li) => {
-        let bb = { v: -1 };
-        const span = 4 * s, step = 0.3 * s;
-        for (let dx = -span; dx <= span; dx += step)
-          for (let dy = -span; dy <= span; dy += step) {
-            const v = score(probes[li], s, b.cx + dx, b.cy + dy);
-            if (v > bb.v) bb = { v, cx: b.cx + dx, cy: b.cy + dy };
-          }
-        return bb;
-      });
-      const v = fits[0].v + fits[1].v;
-      if (!best || v > best.v) best = { v, s, fits };
-    }
+    // recherche grossière (échelle de −20 % à +40 %, centres à ±6 mm : les ouvertures morcelées par les
+    // branches repliées donnent une boîte trop petite), puis fine autour du meilleur résultat
+    const search = (fs, centers, span, step) => {
+      let top = null;
+      for (const f of fs) {
+        const s = s0 * f;
+        const fits = centers.map((c, li) => {
+          let bb = { v: -1 };
+          for (let dx = -span; dx <= span + 1e-9; dx += step)
+            for (let dy = -span; dy <= span + 1e-9; dy += step) {
+              const v = score(probes[li], s, c.cx + dx * s, c.cy + dy * s);
+              if (v > bb.v) bb = { v, cx: c.cx + dx * s, cy: c.cy + dy * s };
+            }
+          return bb;
+        });
+        const v = fits[0].v + fits[1].v;
+        if (!top || v > top.v) top = { v, s, f, fits };
+      }
+      return top;
+    };
+    const range = (a, b, d) => Array.from({ length: Math.round((b - a) / d) + 1 }, (_, i) => a + i * d);
+    const coarse = search(range(0.8, 1.4, 0.03), [bR, bL], 6, 0.6);
+    const best = search(range(coarse.f - 0.03, coarse.f + 0.03, 0.005), coarse.fits, 0.6, 0.15);
     if (best) {
       const [fR, fL] = best.fits;
       st.s = st.s0 = best.s;
@@ -346,15 +414,37 @@ export function openPhotoEditor({ oma, dbl, outline, edit, onApply, onClear }) {
     return true;
   }
 
-  // Proposition : silhouette de la monture (tout ce qui n'est pas le fond extérieur), simplifiée.
+  // Silhouette de la monture sur la carte de contraste : tout ce qui n'est pas le fond relié au bord de la
+  // photo. Les traits collés à la monture (bord de feuille déchirée, ligne de table…) sont coupés : on garde
+  // le « cœur » qui résiste à une ouverture de 1,2 mm, puis seulement les pixels d'origine proches de ce
+  // cœur (les angles des tenons reviennent, les traits ne gardent qu'un moignon, retiré par une petite
+  // ouverture). Une fermeture comble enfin les encoches du bord.
+  function silhouette() {
+    const { k, w, h, map } = st.cmap;
+    const px = mm => Math.max(1, Math.round((mm * st.s) / k)); // mm → pixels de la carte
+    let m = new Uint8Array(w * h);
+    for (let i = 0; i < m.length; i++) m[i] = map[i] >= st.thr ? 1 : 0;
+    m = fillOutside(m, w, h);
+    const R = px(1.2);
+    const near = morph(morph(morph(m, w, h, R, false), w, h, R, true), w, h, R + 1, true);
+    for (let i = 0; i < m.length; i++) m[i] &= near[i];
+    const r = px(0.5);
+    m = morph(morph(m, w, h, r, false), w, h, r, true); // ouverture : moignons
+    m = morph(morph(m, w, h, r, true), w, h, r, false); // fermeture : encoches
+    return { k, w, h, m: fillOutside(m, w, h) };
+  }
+
+  // Proposition : contour de la silhouette, adouci (σ ≈ 0,3 mm, enlève l'escalier des pixels) et simplifié.
   function propose() {
-    const { k, w, h, lab } = analyse(true);
-    const loops = maskContours((x, y) => (lab[x + y * w] === -2 ? 0 : 1), w, h);
+    const { k, w, h, m } = silhouette();
+    const loops = maskContours((x, y) => m[x + y * w], w, h);
     if (!loops.length) return;
     const outer = loops.reduce((a, b) => (b.length > a.length ? b : a));
-    let pts = simplify(outer.map(([x, y]) => imgToMm((x + 0.5) * k, (y + 0.5) * k)), 0.35);
+    let pts = outer.map(([x, y]) => imgToMm((x + 0.5) * k, (y + 0.5) * k));
+    pts = smoothOutline(resample(pts, 0.2), 0.3, 75);
+    pts = simplify(pts, 0.25);
     // pas de points serrés : plus facile à retoucher
-    pts = pts.filter((q, i) => i === 0 || Math.hypot(q[0] - pts[i - 1][0], q[1] - pts[i - 1][1]) > 1);
+    pts = pts.filter((q, i) => i === 0 || Math.hypot(q[0] - pts[i - 1][0], q[1] - pts[i - 1][1]) > 1.5);
     if (area(pts) < 0) pts.reverse();
     if (flipRef()) pts = pts.map(([x, y]) => [-x, y]).reverse(); // modèle à droite : ramené côté x ≤ 0
     st.poly = st.sym ? halfOf(pts) : pts;
@@ -392,7 +482,7 @@ export function openPhotoEditor({ oma, dbl, outline, edit, onApply, onClear }) {
     }
     if (pts.length < 3) return [];
     if (area(pts) < 0) pts.reverse();
-    return st.smooth > 0 ? fillet(pts, st.smooth, 60) : pts;
+    return st.smooth > 0 ? simplify(smoothOutline(resample(pts, Math.max(0.2, st.smooth / 12)), st.smooth / 2, 60), 0.01) : pts;
   }
 
   // ---------- dessin ----------
@@ -709,26 +799,119 @@ function rdp(pts, a, b, tol) {
   }
   return dmax > tol ? [...rdp(pts, a, imax, tol).slice(0, -1), ...rdp(pts, imax, b, tol)] : [pts[a], pts[b]];
 }
-// Arrondi des angles (contour fermé) : chaque coin devient un arc de rayon r, sauf les angles vifs où la
-// direction tourne de plus de maxTurn degrés (tenons, pointes), gardés nets. L'arc est limité à 45 % des
-// segments voisins pour ne jamais empiéter sur le coin suivant.
-export function fillet(pts, r, maxTurn = 60) {
-  const n = pts.length, out = [];
+// Contour fermé rééchantillonné tous les `step` mm.
+export function resample(pts, step) {
+  const out = [];
+  const n = pts.length;
+  let carry = 0;
   for (let i = 0; i < n; i++) {
-    const a = pts[(i + n - 1) % n], p = pts[i], b = pts[(i + 1) % n];
-    const la = Math.hypot(p[0] - a[0], p[1] - a[1]), lb = Math.hypot(b[0] - p[0], b[1] - p[1]);
-    if (la < 1e-6 || lb < 1e-6) continue;
-    const u = [(p[0] - a[0]) / la, (p[1] - a[1]) / la], v = [(b[0] - p[0]) / lb, (b[1] - p[1]) / lb];
-    const turn = Math.acos(Math.max(-1, Math.min(1, u[0] * v[0] + u[1] * v[1])));
-    if (turn < 0.02 || turn > (maxTurn * Math.PI) / 180) { out.push(p); continue; }
-    const t = Math.min(r * Math.tan(turn / 2), 0.45 * la, 0.45 * lb);
-    const p1 = [p[0] - u[0] * t, p[1] - u[1] * t], p2 = [p[0] + v[0] * t, p[1] + v[1] * t];
-    // arc approché par une Bézier quadratique p1 → p → p2, tangente aux deux segments
-    const m = Math.max(2, Math.ceil(turn / 0.12));
-    for (let j = 0; j <= m; j++) {
-      const s = j / m, c0 = (1 - s) ** 2, c1 = 2 * s * (1 - s), c2 = s * s;
-      out.push([c0 * p1[0] + c1 * p[0] + c2 * p2[0], c0 * p1[1] + c1 * p[1] + c2 * p2[1]]);
-    }
+    const a = pts[i], b = pts[(i + 1) % n];
+    const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    let t = carry;
+    while (t < L) { out.push([a[0] + ((b[0] - a[0]) * t) / L, a[1] + ((b[1] - a[1]) * t) / L]); t += step; }
+    carry = t - L;
   }
   return out;
+}
+
+// Lissage d'un contour fermé régulièrement échantillonné, d'écart-type ≈ sigma mm. Les angles vifs, où la direction tourne de plus de maxTurn degrés sur ±0,6 mm,
+// sont repérés d'abord et restent fixes : tenons et pointes gardent leur arête.
+export function smoothOutline(pts, sigma, maxTurn = 60) {
+  const n = pts.length;
+  if (n < 8 || sigma <= 0) return pts;
+  const h = Math.hypot(pts[1][0] - pts[0][0], pts[1][1] - pts[0][1]) || 0.2;
+  const wdw = Math.max(1, Math.round(0.6 / h));
+  const turn = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    const a = pts[(i - wdw + n) % n], p = pts[i], b = pts[(i + wdw) % n];
+    const u = Math.atan2(p[1] - a[1], p[0] - a[0]), v = Math.atan2(b[1] - p[1], b[0] - p[0]);
+    let d = Math.abs(v - u);
+    if (d > Math.PI) d = 2 * Math.PI - d;
+    turn[i] = d;
+  }
+  const lim = (maxTurn * Math.PI) / 180;
+  const fixed = new Uint8Array(n);
+  for (let i = 0; i < n; i++) {
+    if (turn[i] <= lim) continue;
+    let peak = true; // un seul point fixe par angle : le sommet du virage
+    for (let j = 1; j <= wdw && peak; j++) if (turn[(i + j) % n] > turn[i] || turn[(i - j + n) % n] > turn[i]) peak = false;
+    if (peak) fixed[i] = 1;
+  }
+  // lissage gaussien (passes [¼ ½ ¼] : chacune ajoute 0,5·h² de variance), appliqué deux fois :
+  // 2·G(p) − G(G(p)) garde la taille des courbes (un simple G rétrécirait les arrondis serrés)
+  const passes = Math.min(3000, Math.ceil((sigma * sigma) / (0.5 * h * h)));
+  const gauss = (x0, y0) => {
+    let x = Float64Array.from(x0), y = Float64Array.from(y0);
+    let x2 = new Float64Array(n), y2 = new Float64Array(n);
+    for (let k = 0; k < passes; k++) {
+      for (let i = 0; i < n; i++) {
+        const a = i ? i - 1 : n - 1, b = i < n - 1 ? i + 1 : 0;
+        x2[i] = fixed[i] ? x[i] : (x[a] + 2 * x[i] + x[b]) / 4;
+        y2[i] = fixed[i] ? y[i] : (y[a] + 2 * y[i] + y[b]) / 4;
+      }
+      [x, x2] = [x2, x]; [y, y2] = [y2, y];
+    }
+    return [x, y];
+  };
+  const [x1, y1] = gauss(Float64Array.from(pts, q => q[0]), Float64Array.from(pts, q => q[1]));
+  const [xx, yy] = gauss(x1, y1);
+  const x = x1.map((v, i) => 2 * v - xx[i]), y = y1.map((v, i) => 2 * v - yy[i]);
+  return Array.from(x, (v, i) => [v, y[i]]);
+}
+
+// Filtre glissant séparable sur une fenêtre de ±r : maximum, minimum, ou moyenne (op = null).
+function slide(f, w, h, r, op) {
+  const pass = (src, horiz) => {
+    const out = new Float32Array(w * h);
+    const len = horiz ? w : h, lines = horiz ? h : w;
+    for (let l = 0; l < lines; l++) {
+      const at = i => src[horiz ? l * w + i : i * w + l];
+      for (let i = 0; i < len; i++) {
+        const a = Math.max(0, i - r), b = Math.min(len - 1, i + r);
+        let v = op ? at(a) : 0;
+        for (let j = a; j <= b; j++) v = op ? op(v, at(j)) : v + at(j);
+        out[horiz ? l * w + i : i * w + l] = op ? v : v / (b - a + 1);
+      }
+    }
+    return out;
+  };
+  return pass(pass(f, true), false);
+}
+
+// Masque plein (1) : on remplit tout ce qui n'est pas relié au bord de l'image (trous de la silhouette).
+function fillOutside(m, w, h) {
+  const out = new Uint8Array(w * h).fill(1);
+  const stack = [];
+  const seed = q => { if (!m[q] && out[q]) { out[q] = 0; stack.push(q); } };
+  for (let x = 0; x < w; x++) { seed(x); seed((h - 1) * w + x); }
+  for (let y = 0; y < h; y++) { seed(y * w); seed(y * w + w - 1); }
+  while (stack.length) {
+    const q = stack.pop(), x = q % w;
+    if (x > 0) seed(q - 1);
+    if (x < w - 1) seed(q + 1);
+    if (q >= w) seed(q - w);
+    if (q < w * h - w) seed(q + w);
+  }
+  return out;
+}
+
+// Dilatation (dil) ou érosion d'un masque par un carré de demi-côté r (deux passes séparables).
+function morph(m, w, h, r, dil) {
+  const pass = (src, horiz) => {
+    const out = new Uint8Array(w * h);
+    const len = horiz ? w : h, lines = horiz ? h : w;
+    for (let l = 0; l < lines; l++) {
+      const at = i => (horiz ? l * w + i : i * w + l);
+      // compte glissant des pixels pleins dans la fenêtre [i − r, i + r] (hors image = vide pour dilater, plein pour éroder)
+      let cnt = 0;
+      const val = i => (i < 0 || i >= len ? (dil ? 0 : 1) : src[at(i)]);
+      for (let i = -r; i <= r; i++) cnt += val(i);
+      for (let i = 0; i < len; i++) {
+        out[at(i)] = dil ? (cnt > 0 ? 1 : 0) : (cnt === 2 * r + 1 ? 1 : 0);
+        cnt += val(i + r + 1) - val(i - r);
+      }
+    }
+    return out;
+  };
+  return pass(pass(m, true), false);
 }
