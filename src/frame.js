@@ -63,7 +63,7 @@ export const DEFAULTS = {
   // Vis Ø 1 mm en trou borgne : la longue dans le tenon, la courte par l'intérieur de la branche
   tenonScrewD: 1.3,    // trou de passage de la vis longue (Ø 1) : imprimé ≈ 1,15, la vis passe librement et se visse dans l'insert fileté
   tenonScrewLen: 6.0,  // longueur de la vis longue
-  templeScrewD: 1.45,  // trou de passage de la vis courte (essai réel : 1,3 encore trop petit dans la branche)
+  templeScrewD: 1.65,  // trou de passage de la vis courte (essais réels : 1,3 puis 1,45 encore trop petits dans la branche)
   templeScrewLen: 2.6, // longueur de la vis courte
   minSkin: 0.6,        // matière minimale laissée au fond d'un trou borgne
   hingeGap: 7.0,       // E  longueur visible de la charnière entre les collerettes
