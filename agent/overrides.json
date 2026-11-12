@@ -89,7 +89,8 @@
         "eng_plate_temp_initial_layer": [
           "65"
         ]
-      }
+      },
+      "disabled": true
     }
   },
   "process_common": {
@@ -129,5 +130,6 @@
       }
     }
   },
-  "_comment_premiere_couche": "Première couche (devant de la face) : 0,42 mm, 30-40 mm/s, lignes parallèles à l'axe des tenons (X)."
+  "_comment_premiere_couche": "Première couche (devant de la face) : 0,42 mm, 30-40 mm/s, lignes parallèles à l'axe des tenons (X).",
+  "_comment_disabled": "« disabled »: true retire une machine du site et de l'agent sans perdre ses réglages."
 }

@@ -49,6 +49,20 @@
   dialog h2 { margin: 0 0 8px; font-size: 17px; }
   dialog p, dialog li { font-size: 13.5px; color: var(--muted); } dialog b { color: var(--ink); }
   dialog form { text-align: right; margin-top: 10px; }
+  .plate-dialog { max-width: none; }
+  .plate-dialog h2 .mini { font-weight: 400; color: var(--dim); font-size: 12px; margin-left: 6px; }
+  .plate-wrap { display: flex; justify-content: center; margin: 8px 0; }
+  .plate-wrap canvas { border-radius: 8px; border: 1px solid var(--line2); touch-action: none; }
+  .plate-msg { font-size: 12.5px; color: var(--lime); margin: 4px 0; } .plate-msg.bad { color: #f87171; }
+  .plate-bar { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; } .plate-bar .sp { flex: 1; }
+  #printers-dialog .printer { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border: 1px solid var(--line2); border-radius: 10px; margin: 6px 0; font-size: 13px; }
+  #printers-dialog .printer .grow { flex: 1; min-width: 0; line-height: 1.35; }
+  #printers-dialog .printer button { flex: none; width: auto; padding: 6px 12px; }
+  #printers-dialog { width: min(520px, 92vw); } #printers-dialog .printer small { color: var(--dim); }
+  #printers-dialog .printer-add { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; text-align: left; }
+  #printers-dialog .printer-add button { grid-column: span 2; }
+  #printers-dialog .row-end { display: flex; justify-content: space-between; }
+  #printers-msg.bad { color: #f87171; }
   .mini { font-size: 12px; color: var(--dim); }
 
   /* ---------- panneau gauche ---------- */
@@ -195,6 +209,7 @@
       <select id="parts" aria-label="Pièces à imprimer">
         <option value="all">Face + branches</option><option value="face">Face seule</option><option value="temples">Branches seules</option>
       </select>
+      <button id="plate-btn" data-export class="ghost" title="Voir et placer les pièces sur le plateau">Plateau</button>
       <button class="primary btn-icon" id="print" data-export title="Créer le fichier à lancer sur l’imprimante"><svg viewBox="0 0 24 24"><path d="M7 9V3h10v6M7 18H4v-7h16v7h-3"/><path d="M7 14h10v7H7z"/></svg><span>Fichier d’impression</span></button>
       <button id="exp-3mf" data-export class="ghost" title="Télécharger le plateau en .3mf (pour l’ouvrir dans un slicer)">.3mf</button>
     </div>
@@ -214,6 +229,24 @@
   <p class="mini">Si le navigateur demande d’autoriser l’accès aux appareils du réseau local, répondez <b>Autoriser</b>.
     En attendant, le bouton <b>.3mf</b> permet toujours de passer par un slicer.</p>
   <form method="dialog"><button class="primary">Compris</button></form>
+</dialog>
+
+<dialog id="printers-dialog">
+  <h2>Imprimantes en réseau</h2>
+  <p>L’atelier peut envoyer l’impression directement à une <b>Bambu Lab P1S</b> du réseau du magasin.
+    Sur l’imprimante (écran, menu <b>Réglages → Réseau</b>) : activez le <b>Mode LAN uniquement</b> puis le
+    <b>Mode développeur</b>, et relevez l’<b>adresse IP</b> et le <b>code d’accès</b> (8 caractères).</p>
+  <div id="printers-saved"></div>
+  <div id="printers-found"></div>
+  <form id="printer-add" class="printer-add" autocomplete="off">
+    <input type="text" name="ip" placeholder="Adresse IP (ex. 192.168.1.42)" required>
+    <input type="text" name="code" placeholder="Code d’accès" required maxlength="8" autocomplete="off">
+    <input type="text" name="name" placeholder="Nom (ex. P1S atelier)" maxlength="40">
+    <button class="primary" type="submit">Ajouter</button>
+  </form>
+  <label class="check mini"><input type="checkbox" id="use-ams"> L’imprimante a un AMS (bobine du premier emplacement)</label>
+  <p class="mini" id="printers-msg"></p>
+  <form method="dialog" class="row-end"><button type="button" id="printers-scan" class="ghost">Rechercher sur le réseau</button><button>Fermer</button></form>
 </dialog>
 
 <aside class="side">

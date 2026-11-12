@@ -84,7 +84,8 @@ def main():
     out_dir = os.path.join(HERE, 'profiles')
     os.makedirs(out_dir, exist_ok=True)
     common = conf['process_common']
-    for mid, m in conf['machines'].items():
+    active = {k: v for k, v in conf['machines'].items() if not v.get('disabled')}
+    for mid, m in active.items():
         vendor = 'BBL' if m['machine'].startswith('Bambu') else 'Creality'
         vendor_dir = os.path.join(profiles_dir, vendor)
         machine = finalize(resolve(m['machine'], idx, vendor_dir), f'Atelier {m["label"]}', 'machine', {}, m['machine'])
@@ -105,7 +106,7 @@ def main():
     with open(os.path.join(out_dir, 'machines.json'), 'w', encoding='utf8') as fh:
         json.dump({k: {'label': v['label'], 'bed': v['bed'], 'output': v['output'],
                        'qualities': {q: conf['qualities'][q]['label'] for q in conf['qualities']}}
-                   for k, v in conf['machines'].items()}, fh, indent=1, ensure_ascii=False)
+                   for k, v in active.items()}, fh, indent=1, ensure_ascii=False)
 
 
 if __name__ == '__main__':

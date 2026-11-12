@@ -10,17 +10,5 @@
    "fine": "Fine (0,12 mm)",
    "rapide": "Rapide (0,20 mm)"
   }
- },
- "k1max": {
-  "label": "Creality K1 Max",
-  "bed": [
-   300,
-   300
-  ],
-  "output": "gcode",
-  "qualities": {
-   "fine": "Fine (0,12 mm)",
-   "rapide": "Rapide (0,20 mm)"
-  }
  }
 }

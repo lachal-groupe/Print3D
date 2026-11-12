@@ -5,6 +5,7 @@ import Module from 'manifold-3d';
 import { parseOMA } from './oma.js';
 import { buildFrame, DEFAULTS, TEMPLE_SIZES, TEMPLE_STYLES, CORD_HOLES, HINGE_KEYS } from './frame.js';
 import { meshToArrays, to3MF } from './export.js';
+import { openPlate, placeParts, layoutProblems } from './plate.js';
 import { textToPolys } from './text.js';
 import { openPhotoEditor } from './photo.js';
 
@@ -479,25 +480,6 @@ function setExportEnabled(on) {
   document.querySelectorAll('[data-export]').forEach(b => { b.disabled = !on; });
 }
 
-// Copie translatée d'un maillage.
-function placed(arr, dx, dy, dz) {
-  const pos = new Float32Array(arr.pos.length);
-  for (let i = 0; i < pos.length; i += 3) {
-    pos[i] = arr.pos[i] + dx; pos[i + 1] = arr.pos[i + 1] + dy; pos[i + 2] = arr.pos[i + 2] + dz;
-  }
-  return { pos, idx: arr.idx };
-}
-function bbox(arr) {
-  const mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
-  for (let i = 0; i < arr.pos.length; i += 3)
-    for (let k = 0; k < 3; k++) { mn[k] = Math.min(mn[k], arr.pos[i + k]); mx[k] = Math.max(mx[k], arr.pos[i + k]); }
-  return { mn, mx };
-}
-// Pose l'objet sur le plateau (z min = 0) et le centre en x sur le plateau, bas à y0.
-function onPlate(arr, y0, plate = 256) {
-  const b = bbox(arr);
-  return placed(arr, plate / 2 - (b.mn[0] + b.mx[0]) / 2, y0 - b.mn[1], -b.mn[2]);
-}
 // Rotation de 180° : autour de y (face à plat, avant contre le plateau) ou de x (branche gauche, intérieur dessus).
 function turned(arr, axis) {
   const pos = new Float32Array(arr.pos.length);
@@ -509,16 +491,10 @@ function turned(arr, axis) {
   return { pos, idx: arr.idx };
 }
 
-// Range les pièces les unes au-dessus des autres sur le plateau de la machine et renvoie le .3mf.
+// Pièces placées sur le plateau (placement choisi dans « Plateau », sinon rangement par défaut) → .3mf.
+let plateLayout = {};
 function plate3MF(parts, bed) {
-  const items = [];
-  let y = 8;
-  for (const [name, arr] of parts) {
-    const p = onPlate(arr, y, bed[0]);
-    items.push({ name, ...p });
-    y = bbox(p).mx[1] + 6;
-  }
-  return { blob: to3MF(items), fits: y - 6 <= bed[1] - 2 };
+  return { blob: to3MF(placeParts(parts, plateLayout, bed)), fits: layoutProblems(parts, plateLayout, bed).length === 0 };
 }
 const facePart = () => ['Face', turned(result.faceArr, 'y')];
 const templeParts = () => [
@@ -536,8 +512,12 @@ const partsSuffix = () => ({ all: 'complet', face: 'face', temples: `branches_${
 const AGENT = 'http://127.0.0.1:47913';
 let machines = {
   p1s: { label: 'Bambu Lab P1S', bed: [256, 256], output: 'gcode.3mf' },
-  k1max: { label: 'Creality K1 Max', bed: [300, 300], output: 'gcode' },
 };
+let lanPrinters = []; // imprimantes réseau enregistrées dans l'agent (sans leur code d'accès)
+const LAN_MIN = '1.3.0'; // version de l'agent qui sait imprimer en réseau
+const isLan = v => v.startsWith('lan:');
+// machine choisie : une imprimante réseau imprime avec les réglages de la P1S
+const machineOf = v => (isLan(v) ? 'p1s' : v);
 let agentOk = false;
 let agentVersion = null, latestAgent = null; // version de l'agent sur ce PC / version publiée sur le site
 const newer = (a, b) => { // a plus récente que b ? (versions « 1.2.0 »)
@@ -549,9 +529,21 @@ const store = { get: k => { try { return localStorage.getItem(k); } catch { retu
 
 function fillMachines() {
   const sel = $('#machine');
-  const cur = sel.value || store.get('atelier.machine') || 'p1s';
-  sel.innerHTML = Object.entries(machines).map(([id, m]) => `<option value="${id}">${m.label}</option>`).join('');
-  sel.value = machines[cur] ? cur : Object.keys(machines)[0];
+  const cur = sel.value && sel.value !== '__add' ? sel.value : store.get('atelier.machine') || 'p1s';
+  const lanOk = agentOk && !newer(LAN_MIN, agentVersion);
+  sel.innerHTML = [
+    ...lanPrinters.map(p => `<option value="lan:${p.serial}">⇢ ${p.name} (impression directe)</option>`),
+    ...Object.entries(machines).map(([id, m]) => `<option value="${id}">${m.label} (fichier)</option>`),
+    lanOk ? '<option value="__add">+ Imprimante réseau…</option>' : '',
+  ].join('');
+  const ok = [...sel.options].some(o => o.value === cur && cur !== '__add');
+  sel.value = ok ? cur : sel.options[0]?.value;
+  updatePrintButton();
+}
+function updatePrintButton() {
+  const lan = isLan($('#machine').value || '');
+  $('#print').querySelector('span').textContent = lan ? 'Imprimer' : 'Fichier d’impression';
+  $('#print').title = lan ? 'Découper et lancer l’impression sur l’imprimante du réseau' : 'Créer le fichier à lancer sur l’imprimante';
 }
 async function checkAgent() {
   let st = null;
@@ -561,7 +553,10 @@ async function checkAgent() {
   } catch { /* agent absent */ }
   agentOk = !!(st && st.agent === 'atelier-monture' && st.orca);
   agentVersion = agentOk ? st.version : null;
-  if (st?.machines && Object.keys(st.machines).length) { machines = st.machines; fillMachines(); }
+  if (st?.machines && Object.keys(st.machines).length) machines = st.machines;
+  if (agentOk && !newer(LAN_MIN, st.version)) {
+    try { lanPrinters = (await (await fetch(`${AGENT}/printers`, { cache: 'no-store' })).json()).saved || []; } catch { /* ancien agent */ }
+  } else lanPrinters = [];
   if (agentOk && !latestAgent) {
     try { latestAgent = (await (await fetch('agent/version.json', { cache: 'no-store' })).json()).agent; } catch { /* hors ligne */ }
   }
@@ -573,6 +568,7 @@ async function checkAgent() {
   b.querySelector('.lbl').textContent = update ? 'Mettre à jour l’agent' : agentOk ? 'Agent prêt' : 'Agent absent';
   b.title = update ? `Nouvelle version ${latestAgent} disponible (installée : ${agentVersion}) : un clic suffit`
     : agentOk ? `Agent d’impression ${st.version} connecté` : 'Installer l’agent d’impression';
+  if ($('#machine').value !== '__add' && document.activeElement !== $('#machine')) fillMachines();
 }
 
 // Mise à jour en un clic : l'agent télécharge sa nouvelle version sur le site, la vérifie, se remplace et
@@ -601,10 +597,14 @@ async function updateAgent() {
 
 async function printFile() {
   if (!result) return;
-  const id = $('#machine').value, m = machines[id];
+  const choice = $('#machine').value, id = machineOf(choice), m = machines[id];
   const { blob, fits } = plate3MF(PART_SETS[$('#parts').value](), m.bed);
-  if (!fits) $('#warnings').innerHTML += `<div>⚠ Les pièces dépassent le plateau de la ${m.label} : imprimez la face et les branches séparément.</div>`;
+  if (!fits) {
+    $('#warnings').innerHTML += '<div>⚠ Des pièces se chevauchent ou dépassent du plateau : ouvrez « Plateau » pour les placer.</div>';
+    if (isLan(choice)) return; // on ne lance pas une impression ratée d'avance
+  }
   if (!agentOk) { await checkAgent(); if (!agentOk) { $('#agent-dialog').showModal(); return; } }
+  if (isLan(choice)) return printLan(choice.slice(4), blob);
   const btn = $('#print');
   btn.classList.add('busy'); btn.disabled = true;
   btn.querySelector('span').textContent = 'Découpe en cours…';
@@ -619,9 +619,104 @@ async function printFile() {
     $('#warnings').innerHTML += `<div>⚠ Fichier d’impression : ${e.message}</div>`;
   } finally {
     btn.classList.remove('busy'); btn.disabled = false;
-    btn.querySelector('span').textContent = 'Fichier d’impression';
+    updatePrintButton();
   }
 }
+
+// Impression directe : l'agent découpe, envoie le fichier à l'imprimante et la lance ; on suit ensuite l'état.
+let followTimer = null;
+async function printLan(serial, blob) {
+  const p = lanPrinters.find(x => x.serial === serial);
+  if (!confirm(`Lancer l’impression sur ${p?.name ?? 'l’imprimante'} ?\nVérifiez que le plateau est vide et propre.`)) return;
+  const btn = $('#print');
+  btn.classList.add('busy'); btn.disabled = true;
+  btn.querySelector('span').textContent = 'Envoi à l’imprimante…';
+  try {
+    const ams = store.get('atelier.ams') === '1' ? '&ams=1' : '';
+    const r = await fetch(`${AGENT}/print?printer=${serial}&quality=${$('#quality').value}${ams}`, { method: 'POST', body: blob, headers: { 'Content-Type': 'application/octet-stream' } });
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `erreur ${r.status}`);
+    $('#status').textContent = `Impression lancée sur ${p?.name ?? 'l’imprimante'}`;
+    follow(serial, p?.name);
+  } catch (e) {
+    $('#warnings').innerHTML += `<div>⚠ Impression : ${e.message}</div>`;
+  } finally {
+    btn.classList.remove('busy'); btn.disabled = false;
+    updatePrintButton();
+  }
+}
+const STATES = { RUNNING: 'impression', PREPARE: 'préparation', PAUSE: 'en pause', FINISH: 'terminée', FAILED: 'échec', IDLE: 'au repos', SLICING: 'préparation' };
+function follow(serial, name) {
+  clearInterval(followTimer);
+  const tick = async () => {
+    try {
+      const st = await (await fetch(`${AGENT}/printer-status?printer=${serial}`, { cache: 'no-store' })).json();
+      if (st.error) return;
+      const pct = st.percent != null ? ` ${st.percent} %` : '', left = st.remaining ? ` · reste ${st.remaining} min` : '';
+      $('#status').textContent = `${name ?? 'Imprimante'} : ${STATES[st.state] ?? st.state ?? '…'}${pct}${left}`;
+      if (['FINISH', 'FAILED', 'IDLE'].includes(st.state)) clearInterval(followTimer);
+    } catch { /* agent momentanément absent */ }
+  };
+  tick();
+  followTimer = setInterval(tick, 20000);
+}
+
+// ---------- imprimantes réseau : ajout, recherche, retrait ----------
+async function agentJson(path, body) {
+  const r = await fetch(`${AGENT}${path}`, body === undefined ? { cache: 'no-store' }
+    : { method: 'POST', body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' } });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || `erreur ${r.status}`);
+  return j;
+}
+function renderPrinters(list) {
+  lanPrinters = list.saved || [];
+  const esc = t => String(t ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+  $('#printers-saved').innerHTML = lanPrinters.length ? lanPrinters.map(p => `<div class="printer"><span class="grow"><b>${esc(p.name)}</b><br><small>${esc(p.model)} · ${esc(p.ip)}</small></span>
+    <button class="ghost small" data-remove="${esc(p.serial)}">Retirer</button></div>`).join('') : '<p class="mini">Aucune imprimante enregistrée.</p>';
+  $('#printers-found').innerHTML = (list.found || []).map(p => `<div class="printer"><span class="grow">${esc(p.name)}<br><small>${esc(p.model)} · ${esc(p.ip)} · ${p.lan === false ? 'mode LAN + développeur à activer' : 'trouvée sur le réseau'}</small></span>
+    <button class="small" data-use="${esc(p.ip)}" data-name="${esc(p.name)}">Utiliser</button></div>`).join('');
+  fillMachines();
+}
+async function openPrinters() {
+  $('#printers-msg').textContent = '';
+  $('#use-ams').checked = store.get('atelier.ams') === '1';
+  $('#printers-dialog').showModal();
+  try { renderPrinters(await agentJson('/printers')); } catch (e) { $('#printers-msg').textContent = e.message; }
+}
+$('#printers-dialog').addEventListener('click', async e => {
+  const rm = e.target.closest('[data-remove]')?.dataset.remove;
+  if (rm) renderPrinters(await agentJson('/printers/remove', { serial: rm }));
+  const use = e.target.closest('[data-use]');
+  if (use) { const f = $('#printer-add'); f.ip.value = use.dataset.use; f.name.value = use.dataset.name; f.code.focus(); }
+});
+$('#printers-scan').addEventListener('click', async () => {
+  const msg = $('#printers-msg');
+  msg.classList.remove('bad'); msg.textContent = 'Recherche sur le réseau…';
+  try {
+    const list = await agentJson('/printers/scan', {});
+    renderPrinters(list);
+    msg.textContent = list.found?.length ? '' : 'Aucune imprimante trouvée : vérifiez qu’elle est allumée, ou saisissez son adresse IP.';
+  } catch (e) { msg.classList.add('bad'); msg.textContent = e.message; }
+});
+$('#printer-add').addEventListener('submit', async e => {
+  e.preventDefault();
+  const f = e.target, msg = $('#printers-msg');
+  msg.classList.remove('bad'); msg.textContent = 'Connexion à l’imprimante…';
+  try {
+    renderPrinters(await agentJson('/printers/add', { ip: f.ip.value.trim(), code: f.code.value.trim(), name: f.name.value.trim() }));
+    msg.textContent = '✓ Imprimante ajoutée.';
+    f.reset();
+  } catch (err) { msg.classList.add('bad'); msg.textContent = err.message; }
+});
+$('#use-ams').addEventListener('change', e => store.set('atelier.ams', e.target.checked ? '1' : '0'));
+
+// ---------- plateau ----------
+$('#plate-btn').addEventListener('click', () => {
+  if (!result) return;
+  const m = machines[machineOf($('#machine').value)] ?? machines.p1s;
+  openPlate({ parts: PART_SETS[$('#parts').value](), bed: m.bed, layout: plateLayout, title: `Plateau ${m.label}`,
+    onDone: lay => { plateLayout = { ...plateLayout, ...lay }; } });
+});
 
 // ---------- évènements ----------
 $('#file').addEventListener('change', e => e.target.files[0] && loadFile(e.target.files[0]));
@@ -635,7 +730,7 @@ document.addEventListener('drop', e => {
 
 $('#print').addEventListener('click', printFile);
 $('#exp-3mf').addEventListener('click', () => {
-  const m = machines[$('#machine').value];
+  const m = machines[machineOf($('#machine').value)];
   download(plate3MF(PART_SETS[$('#parts').value](), m.bed).blob, `${fileName || 'monture'}_${partsSuffix()}.3mf`);
 });
 $('#agent').addEventListener('click', () => {
@@ -643,7 +738,11 @@ $('#agent').addEventListener('click', () => {
   else if (latestAgent && newer(latestAgent, agentVersion)) updateAgent();
   else checkAgent();
 });
-$('#machine').addEventListener('change', e => store.set('atelier.machine', e.target.value));
+$('#machine').addEventListener('change', e => {
+  if (e.target.value === '__add') { fillMachines(); openPrinters(); return; }
+  store.set('atelier.machine', e.target.value);
+  updatePrintButton();
+});
 $('#quality').value = store.get('atelier.quality') || 'rapide';
 $('#quality').addEventListener('change', e => store.set('atelier.quality', e.target.value));
 fillMachines();
