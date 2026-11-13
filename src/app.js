@@ -455,9 +455,11 @@ async function loadFile(file) {
     params.dbl = Number.isFinite(oma.dbl) ? oma.dbl : 18;
     params.faceOutline = null;
     photoEdit = null;
+    plateLayout = {}; // autre monture : pièces d'autres dimensions, on repart du rangement par défaut
     refit = true;
     syncControls();
-    $('#file-info').innerHTML = `<strong>${file.name}</strong>
+    $('#file-clear').hidden = false;
+    $('#file-info').innerHTML = `<strong>${file.name}</strong><label for="file" class="change">Changer</label>
       <div class="chips"><span class="chip">${oma.right.width.toFixed(1)} × ${oma.right.height.toFixed(1)}</span>
       <span class="chip">DBL ${oma.dbl ?? '?'}</span>${oma.job ? `<span class="chip">job ${oma.job}</span>` : ''}</div>
       ${oma.device ? `<div style="margin-top:4px">${oma.device}${oma.traceType ? ` · tracé ${oma.traceType}` : ''}</div>` : ''}`;
@@ -719,7 +721,29 @@ $('#plate-btn').addEventListener('click', () => {
 });
 
 // ---------- évènements ----------
-$('#file').addEventListener('change', e => e.target.files[0] && loadFile(e.target.files[0]));
+$('#file').addEventListener('change', e => {
+  if (e.target.files[0]) loadFile(e.target.files[0]);
+  e.target.value = ''; // pour pouvoir recharger le même fichier
+});
+// retirer la référence en cours : retour à l'écran d'accueil
+const FILE_INFO_EMPTY = $('#file-info').innerHTML;
+$('#file-clear').addEventListener('click', e => {
+  e.stopPropagation();
+  clearTimeout(pending);
+  if (result) { result.face.delete(); result.templeR.delete(); result.templeL.delete(); result = null; }
+  oma = null; fileName = ''; photoEdit = null; plateLayout = {};
+  params.faceOutline = null;
+  clearGroup();
+  syncControls();
+  $('#file-info').innerHTML = FILE_INFO_EMPTY;
+  $('#file-clear').hidden = true;
+  $('#empty').hidden = false;
+  $('#status').textContent = '';
+  $('#warnings').innerHTML = '';
+  document.querySelectorAll('.stat b').forEach(b => { b.textContent = '—'; });
+  setExportEnabled(false);
+  history.replaceState(null, '', location.pathname); // l'adresse ne recharge plus l'ancien fichier
+});
 const drop = $('#drop');
 ['dragenter', 'dragover'].forEach(ev => document.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
 ['dragleave', 'drop'].forEach(ev => document.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));

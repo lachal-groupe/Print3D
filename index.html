@@ -54,6 +54,8 @@
   .plate-wrap { display: flex; justify-content: center; margin: 8px 0; }
   .plate-wrap canvas { border-radius: 8px; border: 1px solid var(--line2); touch-action: none; }
   .plate-msg { font-size: 12.5px; color: var(--lime); margin: 4px 0; } .plate-msg.bad { color: #f87171; }
+  .plate-tabs { margin: 4px 0 8px; } .plate-3d { border-radius: 8px; overflow: hidden; border: 1px solid var(--line2); }
+  .plate-flat { color: var(--muted); }
   .plate-bar { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; } .plate-bar .sp { flex: 1; }
   #printers-dialog .printer { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border: 1px solid var(--line2); border-radius: 10px; margin: 6px 0; font-size: 13px; }
   #printers-dialog .printer .grow { flex: 1; min-width: 0; line-height: 1.35; }
@@ -74,6 +76,11 @@
   .filecard label { color: var(--teal); font-weight: 600; cursor: pointer; }
   .filecard .meta { font-size: 12.5px; color: var(--muted); min-width: 0; }
   .filecard .meta strong { color: var(--ink); font-size: 13.5px; }
+  .filecard { position: relative; }
+  .filecard .file-x { position: absolute; top: 6px; right: 6px; width: 24px; height: 24px; padding: 0; border-radius: 50%;
+    font-size: 16px; line-height: 1; background: transparent; border: 1px solid transparent; color: var(--dim); }
+  .filecard .file-x:hover { color: #f87171; border-color: var(--line2); }
+  .filecard .change { font-size: 12px; margin-left: 6px; }
   .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
   .chip { font-family: var(--mono); font-size: 11.5px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line2); color: var(--ink); background: var(--card2); }
   .icon-tile { width: 34px; height: 34px; flex: none; border-radius: 10px; display: grid; place-items: center; color: var(--c);
@@ -254,6 +261,7 @@
     <div class="icon-tile"><svg viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M9 13h6M9 17h4"/></svg></div>
     <div id="file-info" class="meta">Glissez un fichier <strong>.oma</strong> ici<br><label for="file">ou parcourir…</label></div>
     <input type="file" id="file" accept=".oma,.vca,.txt,.dat" hidden>
+    <button id="file-clear" class="file-x" hidden title="Retirer ce fichier" aria-label="Retirer ce fichier">×</button>
   </div>
   <div id="controls"></div>
 </aside>

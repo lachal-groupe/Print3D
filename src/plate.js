@@ -100,10 +100,14 @@ export function openPlate({ parts, bed, layout, onDone, title = 'Plateau' }) {
   dlg.className = 'plate-dialog';
   dlg.innerHTML = `
     <h2>${title} <span class="mini">${bed[0]} × ${bed[1]} mm</span></h2>
-    <p class="mini"><b>Glisser</b> une pièce pour la déplacer · <b>molette</b> ou boutons pour la tourner ·
+    <div class="seg plate-tabs"><button type="button" data-view="top" class="on">Placement (dessus)</button><button type="button" data-view="3d">Vue 3D</button></div>
+    <p class="mini" data-hint-top><b>Glisser</b> une pièce pour la déplacer · <b>molette</b> ou boutons pour la tourner ·
       <b>flèches</b> du clavier : 1 mm (Maj : 10 mm) sur la pièce choisie.</p>
-    <div class="plate-wrap"><canvas></canvas></div>
+    <p class="mini" data-hint-3d hidden><b>Glisser</b> pour tourner autour du plateau · <b>molette</b> : zoom ·
+      <b>clic droit</b> : déplacer la vue. Chaque pièce doit reposer à plat : surface posée indiquée ci-dessous.</p>
+    <div class="plate-wrap"><canvas></canvas><div class="plate-3d" hidden></div></div>
     <p class="plate-msg" data-msg></p>
+    <p class="plate-msg plate-flat" data-flat hidden></p>
     <div class="plate-bar">
       <button type="button" data-a="-90">↺ 90°</button><button type="button" data-a="-15">↺ 15°</button>
       <button type="button" data-a="15">↻ 15°</button><button type="button" data-a="90">↻ 90°</button>
@@ -118,7 +122,7 @@ export function openPlate({ parts, bed, layout, onDone, title = 'Plateau' }) {
   const lay = JSON.parse(JSON.stringify({ ...defaultLayout(parts, bed), ...layout }));
   for (const k of Object.keys(lay)) if (!fps.has(k)) delete lay[k];
   let sel = parts[0]?.[0] ?? null, drag = null, bad = new Set();
-  const size = Math.min(560, window.innerWidth - 80);
+  const size = Math.max(260, Math.min(560, window.innerWidth - 80, window.innerHeight - 300)); // tient dans l'écran
   const k = size / Math.max(bed[0], bed[1]);
   const dpr = window.devicePixelRatio || 1;
   canvas.width = bed[0] * k * dpr; canvas.height = bed[1] * k * dpr;
@@ -207,11 +211,95 @@ export function openPlate({ parts, bed, layout, onDone, title = 'Plateau' }) {
     if (act === 'cancel') dlg.close();
     if (act === 'ok') { onDone(JSON.parse(JSON.stringify(lay)), bad.size === 0); dlg.close(); }
   });
-  dlg.addEventListener('close', () => dlg.remove());
+  // ---- vue 3D (vérification) : pièces placées sur le plateau, à faire tourner à la souris
+  let three = null;
+  async function show3D() {
+    const THREE = await import('three');
+    const { OrbitControls } = await import('three/addons/controls/OrbitControls.js');
+    const box = dlg.querySelector('.plate-3d');
+    box.style.width = canvas.style.width; box.style.height = canvas.style.height;
+    if (!three) {
+      const renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setPixelRatio(dpr);
+      renderer.setSize(bed[0] * k, bed[1] * k);
+      renderer.setClearColor(0x0f1520);
+      box.appendChild(renderer.domElement);
+      const scene = new THREE.Scene();
+      const camera = new THREE.PerspectiveCamera(35, bed[0] / bed[1], 1, 5000);
+      camera.up.set(0, 0, 1); // repère de la machine : z vers le haut
+      camera.position.set(bed[0] / 2, -bed[1] * 0.75, bed[1] * 0.95);
+      const controls = new OrbitControls(camera, renderer.domElement);
+      controls.target.set(bed[0] / 2, bed[1] / 2, 0);
+      controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.PAN };
+      controls.enableDamping = true;
+      scene.add(new THREE.HemisphereLight(0xdfe8ff, 0x1a2233, 1.6));
+      const sun = new THREE.DirectionalLight(0xffffff, 2); sun.position.set(-80, -120, 260); scene.add(sun);
+      // plateau : plaque, quadrillage de 10 mm, bord avant marqué
+      const plate = new THREE.Mesh(new THREE.BoxGeometry(bed[0], bed[1], 2), new THREE.MeshStandardMaterial({ color: 0x2a3446, roughness: 0.9 }));
+      plate.position.set(bed[0] / 2, bed[1] / 2, -1);
+      scene.add(plate);
+      const grid = new THREE.GridHelper(Math.max(...bed), Math.max(...bed) / 10, 0x3b4a63, 0x334055);
+      grid.rotation.x = Math.PI / 2; grid.position.set(bed[0] / 2, bed[1] / 2, 0.05);
+      scene.add(grid);
+      const front = new THREE.Mesh(new THREE.BoxGeometry(bed[0], 3, 0.6), new THREE.MeshBasicMaterial({ color: 0x5eead4 }));
+      front.position.set(bed[0] / 2, -1.5, 0.3);
+      scene.add(front);
+      const parts3d = new THREE.Group(); scene.add(parts3d);
+      renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera); });
+      three = { THREE, renderer, parts3d };
+    }
+    // pièces à leur place actuelle
+    const { parts3d } = three;
+    for (const o of [...parts3d.children]) { o.geometry.dispose(); parts3d.remove(o); }
+    const placedParts = placeParts(parts, lay, bed);
+    const flat = [];
+    placedParts.forEach((pp, i) => {
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.BufferAttribute(pp.pos, 3));
+      g.setIndex(new THREE.BufferAttribute(pp.idx, 1));
+      g.computeVertexNormals();
+      const color = bad.has(pp.name) ? 0xf87171 : COLORS[i % COLORS.length];
+      parts3d.add(new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color, roughness: 0.45 })));
+      flat.push(`${pp.name} : ${Math.round(contactArea(pp))} mm² posés`);
+    });
+    const f = dlg.querySelector('[data-flat]');
+    f.hidden = false;
+    f.textContent = '▣ ' + flat.join(' · ');
+  }
+  function setView(v) {
+    dlg.querySelectorAll('[data-view]').forEach(b => b.classList.toggle('on', b.dataset.view === v));
+    canvas.hidden = v === '3d';
+    dlg.querySelector('.plate-3d').hidden = v !== '3d';
+    dlg.querySelector('[data-hint-top]').hidden = v === '3d';
+    dlg.querySelector('[data-hint-3d]').hidden = v !== '3d';
+    dlg.querySelector('[data-flat]').hidden = v !== '3d';
+    if (v === '3d') show3D();
+  }
+  dlg.addEventListener('click', e => {
+    const v = e.target.closest('[data-view]')?.dataset.view;
+    if (v) setView(v);
+  });
+  dlg.addEventListener('close', () => {
+    if (three) { three.renderer.setAnimationLoop(null); three.renderer.dispose(); }
+    dlg.remove();
+  });
   dlg.showModal();
   draw();
   // accès pour les essais
   return { dlg, layout: lay, problems: () => [...problems(fps, lay, bed)] };
+}
+
+// Surface (mm²) des triangles posés sur le plateau (z ≈ 0, tournés vers le bas) : une pièce bien à plat a une
+// grande surface de contact ; quelques mm² seulement = elle repose sur une arête ou un point.
+function contactArea({ pos, idx }) {
+  let a = 0;
+  for (let t = 0; t < idx.length; t += 3) {
+    const i = idx[t] * 3, j = idx[t + 1] * 3, k = idx[t + 2] * 3;
+    if (pos[i + 2] > 0.05 || pos[j + 2] > 0.05 || pos[k + 2] > 0.05) continue;
+    const ux = pos[j] - pos[i], uy = pos[j + 1] - pos[i + 1], vx = pos[k] - pos[i], vy = pos[k + 1] - pos[i + 1];
+    a += Math.abs(ux * vy - uy * vx) / 2;
+  }
+  return a;
 }
 
 // Contrôle sans affichage (avant impression) : liste des pièces en défaut pour un placement donné.
